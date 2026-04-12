@@ -13,11 +13,6 @@ concurrency:
   group: build-release-${{ github.ref }}
   cancel-in-progress: false
 
-# Opt in to Node.js 24 for all JavaScript actions now; blanket protection
-# against the Node 20 deprecation landing June 2026.
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 permissions:
   contents: write        # softprops/action-gh-release creates/updates the Release
   id-token: write        # OIDC for actions/attest-build-provenance
