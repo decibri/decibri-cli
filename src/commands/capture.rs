@@ -8,11 +8,12 @@ use clap::Args;
 use console::Term;
 use crossbeam_channel::RecvTimeoutError;
 use decibri::capture::{AudioCapture, AudioChunk, CaptureConfig};
-use decibri::device::{enumerate_input_devices, DeviceSelector};
+use decibri::device::DeviceSelector;
 use hound::{SampleFormat, WavSpec, WavWriter};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::Serialize;
 
+use crate::device_resolve::{input_display_name, resolve_input_selector};
 use crate::exit;
 
 // Watchdog high-water mark for the library's *unbounded* internal channel.
@@ -68,16 +69,6 @@ pub struct CaptureArgs {
     pub device: Option<String>,
 }
 
-/// Parse the --device argument into a DeviceSelector. Numeric values become
-/// `Index(n)`; everything else becomes `Name(s)` for substring matching.
-pub(crate) fn parse_device_selector(s: &str) -> DeviceSelector {
-    if let Ok(idx) = s.parse::<usize>() {
-        DeviceSelector::Index(idx)
-    } else {
-        DeviceSelector::Name(s.to_string())
-    }
-}
-
 pub(crate) fn parse_duration(s: &str) -> std::result::Result<Duration, String> {
     if let Ok(secs) = s.parse::<f64>() {
         if !secs.is_finite() || secs < 0.0 {
@@ -108,14 +99,15 @@ enum ExitReason {
 }
 
 pub fn run(args: CaptureArgs, json: bool, quiet: bool) -> Result<()> {
-    // Pre-validate the device argument against the input device list so we can
-    // give a helpful error before touching the audio subsystem (and exit 3, not 4).
+    // Pre-validate the device argument against the input device list so we
+    // can give a helpful error before touching the audio subsystem (exit 3,
+    // not 4).
     let selector = match &args.device {
-        Some(s) => Some(resolve_device_arg(s)?),
+        Some(s) => Some(resolve_input_selector(s)?),
         None => None,
     };
 
-    let device_name = resolve_device_name(args.device.as_deref());
+    let device_name = input_display_name(args.device.as_deref());
 
     let config = CaptureConfig {
         sample_rate: args.rate,
@@ -337,110 +329,5 @@ fn update_progress(pb: &ProgressBar, elapsed: Duration, duration: Option<Duratio
     pb.set_message(format!("{samples} samples | {kb} KB"));
     if duration.is_some() {
         pb.set_position(elapsed.as_millis() as u64);
-    }
-}
-
-/// Pre-flight validation: parse the user's --device argument, look it up in
-/// the input device list, and return the resolved `DeviceSelector`. On no
-/// match, returns a `DeviceNotFound` error (exit code 3) listing all
-/// available input devices.
-fn resolve_device_arg(arg: &str) -> Result<DeviceSelector> {
-    let devices = enumerate_input_devices()
-        .context("failed to enumerate input devices")
-        .map_err(|e| exit::io(format!("{e:#}")))?;
-    let selector = parse_device_selector(arg);
-    let matched = match &selector {
-        DeviceSelector::Index(idx) => devices.iter().any(|d| d.index == *idx),
-        DeviceSelector::Name(name) => {
-            let lower = name.to_lowercase();
-            devices
-                .iter()
-                .any(|d| d.name.to_lowercase().contains(&lower))
-        }
-        DeviceSelector::Default => true,
-    };
-    if !matched {
-        let list = devices
-            .iter()
-            .map(|d| format!("  {}: {}", d.index, d.name))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let kind = if matches!(selector, DeviceSelector::Index(_)) {
-            "index"
-        } else {
-            "name"
-        };
-        return Err(exit::device_not_found(format!(
-            "no input device matches {kind} \"{arg}\"\nAvailable input devices:\n{list}"
-        )));
-    }
-    Ok(selector)
-}
-
-fn resolve_device_name(user: Option<&str>) -> String {
-    let devices = enumerate_input_devices().ok();
-    match (user, devices) {
-        (Some(arg), Some(list)) => match parse_device_selector(arg) {
-            DeviceSelector::Index(idx) => list
-                .iter()
-                .find(|d| d.index == idx)
-                .map(|d| d.name.clone())
-                .unwrap_or_else(|| arg.to_string()),
-            DeviceSelector::Name(name) => {
-                let lower = name.to_lowercase();
-                list.iter()
-                    .find(|d| d.name.to_lowercase().contains(&lower))
-                    .map(|d| d.name.clone())
-                    .unwrap_or_else(|| arg.to_string())
-            }
-            DeviceSelector::Default => arg.to_string(),
-        },
-        (Some(arg), None) => arg.to_string(),
-        (None, Some(list)) => list
-            .into_iter()
-            .find(|d| d.is_default)
-            .map(|d| d.name)
-            .unwrap_or_else(|| "default".to_string()),
-        (None, None) => "default".to_string(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_device_numeric_index() {
-        match parse_device_selector("0") {
-            DeviceSelector::Index(0) => {}
-            other => panic!("expected Index(0), got {other:?}"),
-        }
-        match parse_device_selector("42") {
-            DeviceSelector::Index(42) => {}
-            other => panic!("expected Index(42), got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn parse_device_name_substring() {
-        match parse_device_selector("yeti") {
-            DeviceSelector::Name(s) if s == "yeti" => {}
-            other => panic!("expected Name(\"yeti\"), got {other:?}"),
-        }
-        // Mixed alphanumeric falls through to Name (parse::<usize> rejects it).
-        match parse_device_selector("usb1") {
-            DeviceSelector::Name(s) if s == "usb1" => {}
-            other => panic!("expected Name(\"usb1\"), got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn parse_device_negative_falls_to_name() {
-        // "-1" doesn't parse as usize, so it becomes a name (and would fail
-        // to match any real device — exit 3 with the not-found path).
-        match parse_device_selector("-1") {
-            DeviceSelector::Name(s) if s == "-1" => {}
-            other => panic!("expected Name(\"-1\"), got {other:?}"),
-        }
     }
 }
