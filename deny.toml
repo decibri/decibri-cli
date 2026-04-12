@@ -1,7 +1,12 @@
 [advisories]
 version = 2
 yanked = "deny"
-ignore = []
+ignore = [
+    # number_prefix 0.4.0 is unmaintained but NOT vulnerable. Transitively
+    # required by indicatif for progress-bar file-size formatting. Revisit
+    # when indicatif upstream swaps to `unit-prefix`.
+    { id = "RUSTSEC-2025-0119", reason = "number_prefix unmaintained; no security impact; transitive via indicatif" },
+]
 
 [licenses]
 version = 2
@@ -11,10 +16,8 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
-    "ISC",
     "Unicode-3.0",
     "Zlib",
-    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.93
 
