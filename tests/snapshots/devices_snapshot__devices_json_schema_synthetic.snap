@@ -1,0 +1,26 @@
+---
+source: tests/devices_snapshot.rs
+expression: payload
+---
+{
+  "input_devices": [
+    {
+      "channels": 2,
+      "default": true,
+      "index": 0,
+      "kind": "input",
+      "name": "Test Mic",
+      "sample_rate": 48000
+    }
+  ],
+  "output_devices": [
+    {
+      "channels": 2,
+      "default": true,
+      "index": 0,
+      "kind": "output",
+      "name": "Test Speakers",
+      "sample_rate": 48000
+    }
+  ]
+}

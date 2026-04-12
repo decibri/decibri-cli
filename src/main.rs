@@ -1,4 +1,5 @@
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::Shell;
 
 mod commands;
 
@@ -12,22 +13,43 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 
+    /// Emit machine-readable JSON output where supported.
     #[arg(long, global = true)]
     json: bool,
+
+    /// Suppress non-essential human output.
+    #[arg(long, short, global = true)]
+    quiet: bool,
 }
 
 #[derive(Subcommand)]
 enum Commands {
     /// Show version and build information.
     Version,
+    /// List available audio input and output devices.
+    Devices(commands::devices::DevicesArgs),
+    /// Generate shell completion scripts (plumbing only in v0.1.0).
+    #[command(hide = true)]
+    Completions {
+        /// Target shell.
+        shell: Shell,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Some(Commands::Version) => commands::version::run(cli.json),
+        Some(Commands::Devices(args)) => commands::devices::run(args, cli.json, cli.quiet),
+        Some(Commands::Completions { shell }) => {
+            let mut cmd = Cli::command();
+            let bin_name = cmd.get_name().to_string();
+            clap_complete::generate(shell, &mut cmd, bin_name, &mut std::io::stdout());
+            Ok(())
+        }
         None => {
-            Cli::parse_from(["decibri", "--help"]);
+            Cli::command().print_help()?;
+            println!();
             Ok(())
         }
     }
