@@ -1,0 +1,17 @@
+/target/
+
+# Canonical build reference, kept local only per project directive.
+BUILD-PLAN.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# Claude Code session state
+.claude/
