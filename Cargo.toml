@@ -25,7 +25,7 @@ anyhow = "1"
 hound = "3.5"
 crossbeam-channel = "0.5"
 ctrlc = "3"
-indicatif = "0.17"
+indicatif = "0.18"
 console = "0.16"
 humantime = "2.1"
 
