@@ -1,4 +1,6 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
+
+mod commands;
 
 #[derive(Parser)]
 #[command(
@@ -6,8 +8,27 @@ use clap::Parser;
     version,
     about = "Cross-platform CLI for audio capture, playback, and device management"
 )]
-struct Cli {}
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
 
-fn main() {
-    Cli::parse();
+    #[arg(long, global = true)]
+    json: bool,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Show version and build information.
+    Version,
+}
+
+fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+    match cli.command {
+        Some(Commands::Version) => commands::version::run(cli.json),
+        None => {
+            Cli::parse_from(["decibri", "--help"]);
+            Ok(())
+        }
+    }
 }

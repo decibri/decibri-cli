@@ -2,19 +2,27 @@
 name = "decibri-cli"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.82.0"
 license = "Apache-2.0"
 repository = "https://github.com/decibri/decibri-cli"
 description = "Cross-platform CLI for audio capture, playback, and device management"
 keywords = ["audio", "cli", "microphone", "capture", "playback"]
 categories = ["command-line-utilities", "multimedia::audio"]
+build = "build.rs"
 
 [[bin]]
 name = "decibri"
 path = "src/main.rs"
 
 [dependencies]
+decibri = "3.0.0"
 clap = { version = "4.5", features = ["derive", "wrap_help"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+
+[dev-dependencies]
+insta = { version = "1", features = ["json", "redactions"] }
 
 [profile.release]
 opt-level = "z"
