@@ -12,6 +12,9 @@ concurrency:
   group: release-dryrun-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   contents: read
 
@@ -54,15 +57,33 @@ jobs:
         if: matrix.target == 'x86_64-unknown-linux-gnu'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
 
-      - name: Set up aarch64-linux cross toolchain
-        if: matrix.cross
-        uses: taiki-e/setup-cross-toolchain-action@v1
-        with:
-          target: ${{ matrix.target }}
-
-      - name: Install ALSA arm64 (Linux aarch64)
+      # See build-release.yml for the full rationale on why this is hand-rolled
+      # rather than using taiki-e/setup-cross-toolchain-action (which installs
+      # the cross gcc but does not configure arm64 package sources, so ALSA
+      # fails to install).
+      - name: Set up aarch64-linux cross-compile
         if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: sudo apt-get install -y libasound2-dev:arm64
+        shell: bash
+        run: |
+          set -euxo pipefail
+          CODENAME=$(lsb_release -cs)
+          sudo dpkg --add-architecture arm64
+          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+            sudo sed -i '/^Types: deb$/a Architectures: amd64' /etc/apt/sources.list.d/ubuntu.sources
+          fi
+          if [ -f /etc/apt/sources.list ]; then
+            sudo sed -i 's|^deb |deb [arch=amd64] |g' /etc/apt/sources.list
+          fi
+          {
+            echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ $CODENAME main restricted universe multiverse"
+            echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ $CODENAME-updates main restricted universe multiverse"
+            echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ $CODENAME-security main restricted universe multiverse"
+          } | sudo tee /etc/apt/sources.list.d/arm64.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu libasound2-dev:arm64
+          echo 'CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc' >> "$GITHUB_ENV"
+          echo 'PKG_CONFIG_ALLOW_CROSS=1' >> "$GITHUB_ENV"
+          echo 'PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig' >> "$GITHUB_ENV"
 
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
@@ -81,7 +102,7 @@ jobs:
           cd target/${{ matrix.target }}/release
           tar czf decibri-${{ matrix.target }}.tar.gz decibri
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: dryrun-${{ matrix.target }}
           path: |
@@ -98,13 +119,13 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Download x86_64-apple-darwin artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: dryrun-x86_64-apple-darwin
           path: artifacts/x86_64
 
       - name: Download aarch64-apple-darwin artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: dryrun-aarch64-apple-darwin
           path: artifacts/aarch64
@@ -125,7 +146,7 @@ jobs:
           cd merge/universal2
           tar czf decibri-universal2-apple-darwin.tar.gz decibri
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: dryrun-universal2-apple-darwin
           path: merge/universal2/decibri-universal2-apple-darwin.tar.gz
