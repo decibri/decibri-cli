@@ -1,0 +1,193 @@
+name: Build Release
+
+# Triggered by pushing a v* tag (e.g., v0.1.0, v0.1.0-alpha.1, v0.1.0-rc.1).
+# Also supports manual dispatch for pipeline testing — in that case only the
+# build matrix runs; the `release` job is gated to tag pushes.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: build-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write        # softprops/action-gh-release creates/updates the Release
+  id-token: write        # OIDC for actions/attest-build-provenance
+  attestations: write    # actions/attest-build-provenance writes the attestation
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            ext: .exe
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            ext: ''
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            ext: ''
+            cross: true
+          - target: x86_64-apple-darwin
+            os: macos-14
+            ext: ''
+          - target: aarch64-apple-darwin
+            os: macos-14
+            ext: ''
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "release-${{ matrix.target }}"
+
+      - name: Install ALSA (Linux x86_64)
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      # taiki-e/setup-cross-toolchain-action handles the multiarch dpkg dance,
+      # gcc-aarch64-linux-gnu, linker env, and PKG_CONFIG_* vars in one step.
+      # Battle-tested and maintained; prefer over hand-rolled sources.list
+      # edits which break differently between Ubuntu 22.04 and 24.04.
+      - name: Set up aarch64-linux cross toolchain
+        if: matrix.cross
+        uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: ${{ matrix.target }}
+
+      - name: Install ALSA arm64 (Linux aarch64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: sudo apt-get install -y libasound2-dev:arm64
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: target/${{ matrix.target }}/release/decibri${{ matrix.ext }}
+
+      - name: Package binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Set-Location target/${{ matrix.target }}/release
+          7z a decibri-${{ matrix.target }}.zip decibri.exe
+
+      - name: Package binary (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf decibri-${{ matrix.target }}.tar.gz decibri
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: |
+            target/${{ matrix.target }}/release/decibri-${{ matrix.target }}.zip
+            target/${{ matrix.target }}/release/decibri-${{ matrix.target }}.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  universal2:
+    name: macOS universal2
+    needs: build
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download x86_64-apple-darwin artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: binary-x86_64-apple-darwin
+          path: artifacts/x86_64
+
+      - name: Download aarch64-apple-darwin artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: binary-aarch64-apple-darwin
+          path: artifacts/aarch64
+
+      - name: Lipo-merge into universal2 binary
+        run: |
+          mkdir -p merge/x86_64 merge/aarch64 merge/universal2
+          tar xzf artifacts/x86_64/decibri-x86_64-apple-darwin.tar.gz -C merge/x86_64
+          tar xzf artifacts/aarch64/decibri-aarch64-apple-darwin.tar.gz -C merge/aarch64
+          lipo -create \
+            merge/x86_64/decibri \
+            merge/aarch64/decibri \
+            -output merge/universal2/decibri
+          file merge/universal2/decibri
+          lipo -info merge/universal2/decibri
+          cd merge/universal2
+          tar czf decibri-universal2-apple-darwin.tar.gz decibri
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: merge/universal2/decibri
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-universal2-apple-darwin
+          path: merge/universal2/decibri-universal2-apple-darwin.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Create GitHub Release
+    needs: [build, universal2]
+    # Only create a Release for actual tag pushes. On workflow_dispatch the
+    # build+universal2 jobs still run (useful for smoke-testing the pipeline)
+    # but the Release step is skipped.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download all binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: List downloaded artifacts
+        run: ls -la artifacts/
+
+      - name: Generate SHA256SUMS
+        shell: bash
+        run: |
+          cd artifacts
+          # Sort deterministically by filename so the SHA256SUMS file is
+          # reproducible across re-runs. Format: "<hex>  <filename>" (two
+          # spaces — GNU sha256sum convention).
+          find . -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) \
+            -printf '%f\n' \
+            | sort \
+            | xargs -I {} sha256sum {} \
+            > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/decibri-*.tar.gz
+            artifacts/decibri-*.zip
+            artifacts/SHA256SUMS
+          draft: true
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true

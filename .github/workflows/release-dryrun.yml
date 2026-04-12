@@ -1,0 +1,133 @@
+name: Release Dry-Run
+
+# Manually triggered smoke test of the build matrix. Validates that all 5
+# targets compile, that the aarch64-linux cross toolchain is correctly set
+# up, and that the universal2 lipo-merge produces a working binary — without
+# creating a GitHub Release, tagging anything, or running provenance attest
+# (which is slow and only matters for real releases).
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: release-dryrun-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Dry build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            ext: .exe
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            ext: ''
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            ext: ''
+            cross: true
+          - target: x86_64-apple-darwin
+            os: macos-14
+            ext: ''
+          - target: aarch64-apple-darwin
+            os: macos-14
+            ext: ''
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "release-${{ matrix.target }}"
+
+      - name: Install ALSA (Linux x86_64)
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Set up aarch64-linux cross toolchain
+        if: matrix.cross
+        uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: ${{ matrix.target }}
+
+      - name: Install ALSA arm64 (Linux aarch64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: sudo apt-get install -y libasound2-dev:arm64
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Set-Location target/${{ matrix.target }}/release
+          7z a decibri-${{ matrix.target }}.zip decibri.exe
+
+      - name: Package binary (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf decibri-${{ matrix.target }}.tar.gz decibri
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dryrun-${{ matrix.target }}
+          path: |
+            target/${{ matrix.target }}/release/decibri-${{ matrix.target }}.zip
+            target/${{ matrix.target }}/release/decibri-${{ matrix.target }}.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+
+  universal2:
+    name: Dry universal2
+    needs: build
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download x86_64-apple-darwin artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dryrun-x86_64-apple-darwin
+          path: artifacts/x86_64
+
+      - name: Download aarch64-apple-darwin artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dryrun-aarch64-apple-darwin
+          path: artifacts/aarch64
+
+      - name: Lipo-merge + sanity check
+        run: |
+          mkdir -p merge/x86_64 merge/aarch64 merge/universal2
+          tar xzf artifacts/x86_64/decibri-x86_64-apple-darwin.tar.gz -C merge/x86_64
+          tar xzf artifacts/aarch64/decibri-aarch64-apple-darwin.tar.gz -C merge/aarch64
+          lipo -create \
+            merge/x86_64/decibri \
+            merge/aarch64/decibri \
+            -output merge/universal2/decibri
+          file merge/universal2/decibri
+          lipo -info merge/universal2/decibri
+          # Sanity check: universal2 binary should run on the Apple-silicon runner
+          ./merge/universal2/decibri --version
+          cd merge/universal2
+          tar czf decibri-universal2-apple-darwin.tar.gz decibri
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dryrun-universal2-apple-darwin
+          path: merge/universal2/decibri-universal2-apple-darwin.tar.gz
+          if-no-files-found: error
+          retention-days: 3
