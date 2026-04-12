@@ -26,7 +26,7 @@ hound = "3.5"
 crossbeam-channel = "0.5"
 ctrlc = "3"
 indicatif = "0.17"
-console = "0.15"
+console = "0.16"
 humantime = "2.1"
 
 [dev-dependencies]
