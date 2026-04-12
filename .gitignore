@@ -15,3 +15,6 @@ Thumbs.db
 
 # Claude Code session state
 .claude/
+
+# Local setup checklist (not published)
+.github/SETTINGS.md

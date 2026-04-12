@@ -1,0 +1,93 @@
+name: Bug report
+description: Report a bug in decibri-cli
+title: "[bug]: "
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. Please fill out the fields below so we can reproduce and fix the issue quickly.
+
+        **Security vulnerabilities**: do NOT file them here. Use the private advisory flow at <https://github.com/decibri/decibri-cli/security/advisories/new>.
+
+  - type: input
+    id: version
+    attributes:
+      label: decibri-cli version
+      description: Paste the output of `decibri version` (or `decibri version --json`).
+      placeholder: decibri-cli 0.1.0 / decibri 3.0.0 / ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux (please specify distro + version below)
+        - Other (please specify below)
+    validations:
+      required: true
+
+  - type: input
+    id: os-details
+    attributes:
+      label: OS details
+      description: Distro/version, architecture (x86_64, aarch64, etc.)
+      placeholder: Ubuntu 24.04 x86_64 / Windows 11 / macOS 14.5 Apple Silicon / ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How did you install decibri-cli?
+      options:
+        - npm (`npm install -g decibri-cli`)
+        - cargo (`cargo install decibri-cli`)
+        - Direct download from GitHub Releases
+        - Built from source
+        - Other (please specify below)
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands you ran, in order. Paste command lines, not screenshots.
+      placeholder: |
+        1. `decibri capture -o test.wav -d 5`
+        2. Press Ctrl+C at ~2 seconds
+        3. `decibri play test.wav`
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What actually happened? Include stderr output and exit code if relevant.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Anything else that might help — device names, unusual audio setup, CI runner details, screenshots of GUI issues, etc.
+    validations:
+      required: false

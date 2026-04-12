@@ -1,0 +1,55 @@
+name: Feature request
+description: Suggest a new feature or enhancement
+title: "[feature]: "
+labels:
+  - enhancement
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to suggest a feature. Before filing, please check the roadmap in [README.md](https://github.com/decibri/decibri-cli#roadmap) — some features are already planned for v0.2.0 or v0.3.0.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the use case. What are you trying to do that is currently hard or impossible?
+      placeholder: |
+        I'm building a CI pipeline that needs to [...] but decibri-cli currently [...]
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: If you have a specific design in mind, describe it. Otherwise leave blank.
+      placeholder: |
+        Add a `--foo` flag to `decibri capture` that [...]
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you evaluated and why they did not fit.
+    validations:
+      required: false
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Version scope
+      description: Is this a small addition (v0.1.x patch), a new feature (v0.2.0+), or a breaking change (v1.0.0)? Best guess is fine.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Examples, related tools, prior art, anything else useful.
+    validations:
+      required: false
