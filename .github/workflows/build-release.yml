@@ -99,7 +99,7 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
 
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: target/${{ matrix.target }}/release/decibri${{ matrix.ext }}
 
@@ -159,7 +159,7 @@ jobs:
           cd merge/universal2
           tar czf decibri-universal2-apple-darwin.tar.gz decibri
 
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: merge/universal2/decibri
 
