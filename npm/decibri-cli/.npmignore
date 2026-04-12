@@ -1,0 +1,12 @@
+# Tests — not needed in the published package.
+tests/
+
+# Downloaded artifacts (install.js regenerates these on every install).
+bin/decibri-bin
+bin/decibri-bin.exe
+*.zip
+*.tar.gz
+
+# OS junk
+.DS_Store
+Thumbs.db

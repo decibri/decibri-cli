@@ -10,6 +10,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   contents: read
 
@@ -83,3 +86,19 @@ jobs:
         run: |
           ./target/debug/decibri version
           ./target/debug/decibri version --json
+
+  npm-wrapper:
+    name: npm wrapper tests
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Run node tests
+        working-directory: npm/decibri-cli
+        run: node --test tests/platform.test.js tests/sha256sums.test.js tests/version.test.js
+      - name: Validate npm pack
+        working-directory: npm/decibri-cli
+        run: npm pack --dry-run

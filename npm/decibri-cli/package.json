@@ -1,0 +1,42 @@
+{
+  "name": "decibri-cli",
+  "version": "0.0.1",
+  "description": "Cross-platform CLI for audio capture, playback, and device management. Zero runtime dependencies.",
+  "bin": {
+    "decibri": "./bin/decibri"
+  },
+  "scripts": {
+    "postinstall": "node install.js",
+    "preuninstall": "node uninstall.js",
+    "test": "node --test tests/platform.test.js tests/sha256sums.test.js tests/version.test.js"
+  },
+  "files": [
+    "install.js",
+    "uninstall.js",
+    "bin/",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/decibri/decibri-cli.git"
+  },
+  "homepage": "https://decibri.com/cli",
+  "bugs": {
+    "url": "https://github.com/decibri/decibri-cli/issues"
+  },
+  "license": "Apache-2.0",
+  "keywords": [
+    "audio",
+    "cli",
+    "microphone",
+    "capture",
+    "playback",
+    "wav",
+    "cross-platform"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "author": "Analytics in Motion"
+}

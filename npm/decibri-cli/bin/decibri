@@ -1,0 +1,46 @@
+#!/usr/bin/env node
+'use strict';
+
+// JS wrapper for the decibri binary.
+//
+// npm's cmd-shim on Windows (and the POSIX shell symlink on Unix) dispatches
+// to this file via node. We locate the real binary downloaded by install.js
+// (decibri-bin or decibri-bin.exe, next to this file) and exec it with the
+// caller's argv and stdio.
+//
+// This pattern is how esbuild, turbo, biome, TypeScript, and most other
+// native-binary-in-npm packages handle cross-platform `bin` entries. A plain
+// shell-script shim would fail on Windows because npm's cmd-shim can only
+// dispatch via node, sh, or bash — and sh is not reliably on Windows PATH.
+
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+
+const ext = process.platform === 'win32' ? '.exe' : '';
+const binary = path.join(__dirname, `decibri-bin${ext}`);
+
+if (!fs.existsSync(binary)) {
+    console.error('Error: decibri binary not found at ' + binary);
+    console.error('');
+    console.error('This usually means npm was run with --ignore-scripts,');
+    console.error('which prevents the binary from being downloaded during install.');
+    console.error('');
+    console.error('Manual install:');
+    console.error('  1. Download the binary for your platform from:');
+    console.error('     https://github.com/decibri/decibri-cli/releases');
+    console.error('  2. Place the binary at: ' + binary);
+    if (process.platform !== 'win32') {
+        console.error('  3. Make it executable: chmod +x "' + binary + '"');
+    }
+    process.exit(1);
+}
+
+const result = spawnSync(binary, process.argv.slice(2), { stdio: 'inherit' });
+
+if (result.error) {
+    console.error('Error executing decibri: ' + result.error.message);
+    process.exit(1);
+}
+
+process.exit(result.status ?? 1);
