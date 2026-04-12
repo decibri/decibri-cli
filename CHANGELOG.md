@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-04-12
+
+Stable release of the same feature set as `0.1.0-alpha.1`. No functional changes since alpha; shipped to the default `latest` npm tag after alpha round-trip testing succeeded on Windows, macOS, and Linux.
+
 ## [0.1.0-alpha.1] - 2026-04-12
 
 ### Added
@@ -36,5 +40,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SLSA provenance attestations on every release binary via GitHub Actions.
 - `SHA256SUMS` manifest attached to every release for integrity verification.
 
-[Unreleased]: https://github.com/decibri/decibri-cli/compare/v0.1.0-alpha.1...HEAD
+[Unreleased]: https://github.com/decibri/decibri-cli/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/decibri/decibri-cli/releases/tag/v0.1.0
 [0.1.0-alpha.1]: https://github.com/decibri/decibri-cli/releases/tag/v0.1.0-alpha.1
