@@ -8,18 +8,17 @@ use std::time::Duration;
 use anyhow::{anyhow, Context, Result};
 use clap::Args;
 use console::Term;
-use decibri::device::DeviceSelector;
-use decibri::output::{AudioOutput, OutputConfig};
+use decibri::{Speaker, SpeakerConfig};
 use hound::{SampleFormat, WavReader};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::Serialize;
 
-use crate::device_resolve::{output_display_name, resolve_output_selector};
+use crate::device_resolve::{output_display_name, resolve_output};
 use crate::exit;
 
 /// Number of samples (across all channels) we ship to the library per `send()`
 /// call. 4096 interleaved samples is ~256ms at 16 kHz mono or ~46ms at
-/// 44.1 kHz stereo — small enough to keep Ctrl+C latency low (we only check
+/// 44.1 kHz stereo: small enough to keep Ctrl+C latency low (we only check
 /// the shutdown flag between sends), large enough to keep channel/syscall
 /// overhead negligible. The library's internal channel is bounded at 32, so
 /// the maximum in-flight backlog is ~8s of voice audio.
@@ -33,6 +32,10 @@ pub struct PlayArgs {
     /// Device name substring (case-insensitive) or numeric index from `decibri devices`.
     #[arg(long)]
     pub device: Option<String>,
+
+    /// Stable device ID from `decibri devices --json` (exact match).
+    #[arg(long, conflicts_with = "device")]
+    pub device_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -53,12 +56,12 @@ pub fn run(args: PlayArgs, json: bool, quiet: bool) -> Result<()> {
         .map_err(|e| exit::io(format!("{e:#}")))?;
     let spec = reader.spec();
 
-    // Only 16-bit PCM int and 32-bit float WAVs are supported in v0.1.0.
+    // Only 16-bit PCM int and 32-bit float WAVs are supported.
     match (spec.sample_format, spec.bits_per_sample) {
         (SampleFormat::Int, 16) | (SampleFormat::Float, 32) => {}
         (fmt, bits) => {
             return Err(anyhow!(
-                "unsupported WAV format: {fmt:?} {bits}-bit. v0.1.0 supports 16-bit PCM int and 32-bit float only."
+                "unsupported WAV format: {fmt:?} {bits}-bit. Supported inputs are 16-bit PCM int and 32-bit float."
             ));
         }
     }
@@ -68,19 +71,15 @@ pub fn run(args: PlayArgs, json: bool, quiet: bool) -> Result<()> {
     let duration_seconds = samples_to_seconds(total_samples, spec.sample_rate, spec.channels);
 
     // Resolve device (exit 3 on no match, before touching the audio subsystem).
-    let selector = match &args.device {
-        Some(s) => resolve_output_selector(s)?,
-        None => DeviceSelector::Default,
-    };
-    let device_name = output_display_name(args.device.as_deref());
+    let selector = resolve_output(args.device.as_deref(), args.device_id.as_deref())?;
+    let device_name = output_display_name(args.device.as_deref(), args.device_id.as_deref());
 
-    let config = OutputConfig {
-        sample_rate: spec.sample_rate,
-        channels: spec.channels,
-        device: selector,
-    };
+    let mut config = SpeakerConfig::default();
+    config.sample_rate = spec.sample_rate;
+    config.channels = spec.channels;
+    config.device = selector;
 
-    let output = AudioOutput::new(config).map_err(|e| anyhow!("output init failed: {e}"))?;
+    let output = Speaker::new(config).map_err(|e| anyhow!("output init failed: {e}"))?;
 
     // ctrlc handler: flip an AtomicBool observed by the feed loop.
     let shutdown = Arc::new(AtomicBool::new(false));
@@ -118,7 +117,7 @@ pub fn run(args: PlayArgs, json: bool, quiet: bool) -> Result<()> {
 
     // Feed loop. `stream.send()` blocks on backpressure against the library's
     // bounded channel (capacity 32), so this naturally throttles to the audio
-    // playback rate — no sleep, no manual pacing. We only check the shutdown
+    // playback rate: no sleep, no manual pacing. We only check the shutdown
     // flag between sends, so worst-case Ctrl+C latency is one chunk-time.
     let mut fed: u64 = 0;
     let mut interrupted = false;
@@ -137,16 +136,26 @@ pub fn run(args: PlayArgs, json: bool, quiet: bool) -> Result<()> {
     }
 
     // Finish: drain on normal EOF (blocks until audio fully played out), stop
-    // on Ctrl+C (discards pending samples — user wants silence NOW).
+    // on Ctrl+C (discards pending samples immediately and goes silent). A
+    // device failure mid-playback ends the stream early; `drain()` returns
+    // instead of blocking, and the library records the typed cause, read
+    // below via `take_last_error()`.
     if interrupted {
         stream.stop();
     } else {
         stream.drain();
     }
+    let playback_error = stream.take_last_error();
     drop(stream);
 
     if let Some(pb) = progress {
         pb.finish_and_clear();
+    }
+
+    if let Some(err) = playback_error {
+        return Err(exit::io(format!(
+            "output device became unavailable during playback ({err})"
+        )));
     }
 
     let played = if interrupted { fed } else { total_samples };
@@ -173,10 +182,10 @@ pub fn run(args: PlayArgs, json: bool, quiet: bool) -> Result<()> {
 }
 
 /// Load an entire WAV file into a Vec<f32> for interleaved samples. We do the
-/// i16 → f32 conversion here; the decibri output API takes f32 interleaved.
-/// Reading the whole file up front is fine for v0.1.0 — a 1-hour 16 kHz mono
-/// recording is ~230 MB of f32, and playback is a one-shot operation, not a
-/// streaming decode.
+/// i16 to f32 conversion here; the decibri speaker API takes f32 interleaved.
+/// Reading the whole file up front keeps playback simple: a 1-hour 16 kHz
+/// mono recording is ~230 MB of f32, and playback is a one-shot operation,
+/// not a streaming decode.
 fn load_samples(mut reader: WavReader<BufReader<File>>, spec: hound::WavSpec) -> Result<Vec<f32>> {
     match (spec.sample_format, spec.bits_per_sample) {
         (SampleFormat::Int, 16) => reader
@@ -191,9 +200,9 @@ fn load_samples(mut reader: WavReader<BufReader<File>>, spec: hound::WavSpec) ->
     }
 }
 
-/// i16 → f32 conversion for one sample. i16::MAX → 1.0, i16::MIN → slightly
-/// under -1.0 (standard lossy round-trip; not a bug). The decibri output API
-/// expects f32 samples in [-1.0, 1.0].
+/// i16 to f32 conversion for one sample. i16::MAX maps to 1.0, i16::MIN to
+/// slightly under -1.0 (standard lossy round-trip; not a bug). The decibri
+/// speaker API expects f32 samples in [-1.0, 1.0].
 fn i16_to_f32(sample: i16) -> f32 {
     f32::from(sample) / f32::from(i16::MAX)
 }

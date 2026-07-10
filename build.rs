@@ -5,10 +5,10 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
     let lock = fs::read_to_string("Cargo.lock")
-        .expect("Cargo.lock not found — run `cargo generate-lockfile` first");
+        .expect("Cargo.lock not found; run `cargo generate-lockfile` first");
 
     let version = extract_decibri_version(&lock)
-        .unwrap_or_else(|| panic!("decibri not found in Cargo.lock — build environment is broken"));
+        .unwrap_or_else(|| panic!("decibri not found in Cargo.lock; build environment is broken"));
 
     println!("cargo:rustc-env=DECIBRI_VERSION={version}");
 

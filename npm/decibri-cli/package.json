@@ -1,6 +1,6 @@
 {
   "name": "decibri-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Cross-platform CLI for audio capture, playback, and device management. Zero runtime dependencies.",
   "bin": {
     "decibri": "./bin/decibri"

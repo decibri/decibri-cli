@@ -1,8 +1,8 @@
 // Hardware-independent tests for `decibri capture`.
 //
-// Real audio capture is verified by the user manually per BUILD-PLAN's
-// hardware-test policy. CI runs only the binary-level argument validation
-// and a hound round-trip that simulates the synthetic-PCM → WAV → read-back
+// Real audio capture is verified manually on real hardware; CI runners have
+// no audio devices. CI runs only the binary-level argument validation and a
+// hound round-trip that simulates the synthetic-PCM to WAV to read-back
 // path that the capture command exercises internally.
 
 use std::io::Cursor;
@@ -31,28 +31,102 @@ fn capture_help_documents_all_flags() {
     let output = Command::new(binary_path())
         .args(["capture", "--help"])
         .output()
-        .expect("failed to execute decibri binary — run `cargo build` first");
+        .expect("failed to execute decibri binary; run `cargo build` first");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    for flag in ["--output", "--duration", "--rate", "--channels", "--device"] {
+    for flag in [
+        "--output",
+        "--duration",
+        "--rate",
+        "--channels",
+        "--device",
+        "--device-id",
+    ] {
         assert!(
             stdout.contains(flag),
             "capture --help missing {flag}: {stdout}"
         );
     }
-    // v0.2.0 flags must NOT have leaked into v0.1.0.
+    // Flags that do not exist must not appear in help.
     assert!(
         !stdout.contains("--vad"),
-        "--vad must not appear in v0.1.0: {stdout}"
+        "--vad must not appear in capture --help: {stdout}"
     );
     assert!(
         !stdout.contains("--silence-ms"),
-        "--silence-ms must not appear in v0.1.0: {stdout}"
+        "--silence-ms must not appear in capture --help: {stdout}"
     );
     assert!(
         !stdout.contains("--raw"),
-        "--raw must not appear in v0.1.0: {stdout}"
+        "--raw must not appear in capture --help: {stdout}"
     );
+}
+
+// Capture is mono only: any --channels value other than 1 is rejected at the
+// clap layer with exit code 2 (invalid arguments), before the audio
+// subsystem is touched.
+#[test]
+fn capture_rejects_multichannel() {
+    let output = Command::new(binary_path())
+        .args(["capture", "-o", "x.wav", "-c", "2"])
+        .output()
+        .expect("failed to execute decibri binary");
+    assert!(!output.status.success(), "--channels 2 must error");
+    let code = output.status.code().unwrap_or(-1);
+    assert_eq!(code, 2, "expected exit 2 (invalid arguments), got {code}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("mono"),
+        "expected mono-only arg error, got: {stderr}"
+    );
+}
+
+// --device-id resolution runs before the output file is created. A
+// nonexistent ID exits 3 (device not found) on hosts where enumeration
+// works, or 4 when the audio subsystem itself is unavailable (headless CI).
+// Either way this proves clap accepts the flag, the explicit `-c 1` value
+// passes the mono-only parser, and the ID pre-validation path executes.
+#[test]
+fn capture_device_id_no_match_is_device_not_found() {
+    let output = Command::new(binary_path())
+        .args([
+            "capture",
+            "-o",
+            "x.wav",
+            "-c",
+            "1",
+            "--device-id",
+            "no-such-device-id-zzz",
+        ])
+        .output()
+        .expect("failed to execute decibri binary");
+    assert!(!output.status.success(), "nonexistent device ID must error");
+    let code = output.status.code().unwrap_or(-1);
+    assert!(
+        code == 3 || code == 4,
+        "expected 3 (device not found) or 4 (audio subsystem unavailable), got {code}"
+    );
+}
+
+// --device and --device-id are mutually exclusive; clap rejects supplying
+// both with exit code 2.
+#[test]
+fn capture_rejects_device_and_device_id_together() {
+    let output = Command::new(binary_path())
+        .args([
+            "capture",
+            "-o",
+            "x.wav",
+            "--device",
+            "mic",
+            "--device-id",
+            "some-id",
+        ])
+        .output()
+        .expect("failed to execute decibri binary");
+    assert!(!output.status.success(), "conflicting flags must error");
+    let code = output.status.code().unwrap_or(-1);
+    assert_eq!(code, 2, "expected exit 2 (invalid arguments), got {code}");
 }
 
 #[test]
@@ -143,7 +217,7 @@ fn synthetic_f32_to_wav_roundtrip() {
     assert_eq!(read_samples.len(), total_samples);
 }
 
-// An empty WAV (zero samples) must still be valid — the user's "zero chunks
+// An empty WAV (zero samples) must still be valid: the "zero chunks
 // captured" branch must produce a file VLC and Audacity can open. We don't
 // have hound here in the binary, so simulate the same finalize() path.
 #[test]

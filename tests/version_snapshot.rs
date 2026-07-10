@@ -20,7 +20,7 @@ fn run_version(args: &[&str]) -> String {
     let output = Command::new(binary_path())
         .args(args)
         .output()
-        .expect("failed to execute decibri binary — run `cargo build` first");
+        .expect("failed to execute decibri binary; run `cargo build` first");
     assert!(
         output.status.success(),
         "decibri exited non-zero: {}",
