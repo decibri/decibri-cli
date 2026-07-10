@@ -314,8 +314,8 @@ Apache-2.0. See [LICENSE](LICENSE).
 
 ## Part of the decibri ecosystem
 
-- [`decibri`](https://github.com/decibri/decibri) — the underlying Rust audio library + Node.js bindings
-- [`mcp-listen`](https://github.com/decibri/mcp-listen) — MCP server for AI agent voice input
-- [`mcp-speak`](https://github.com/decibri/mcp-speak) — MCP server for AI agent voice output
+- [`decibri`](https://github.com/decibri/decibri) - the underlying Rust audio library + Node.js bindings
+- [`mcp-listen`](https://github.com/decibri/mcp-listen) - MCP server for AI agent voice input
+- [`mcp-speak`](https://github.com/decibri/mcp-speak) - MCP server for AI agent voice output
 
 Learn more at [decibri.com](https://decibri.com).
