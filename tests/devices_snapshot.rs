@@ -1,8 +1,8 @@
 // Hardware-independent snapshot tests for `decibri devices`.
 //
-// Phase 2 ships a synthetic JSON serializer test (no audio subsystem touched)
-// plus a help-text snapshot. Tests that depend on real device enumeration are
-// the user's local responsibility per BUILD-PLAN's hardware-test policy.
+// Covers a synthetic JSON serializer test (no audio subsystem touched) plus a
+// help-text snapshot. Tests that depend on real device enumeration are run
+// locally, since they require hardware.
 
 use std::process::Command;
 
@@ -26,7 +26,7 @@ fn run(args: &[&str]) -> String {
     let output = Command::new(binary_path())
         .args(args)
         .output()
-        .expect("failed to execute decibri binary — run `cargo build` first");
+        .expect("failed to execute decibri binary; run `cargo build` first");
     assert!(
         output.status.success(),
         "decibri exited non-zero: {}",
@@ -92,15 +92,14 @@ fn completions_bash_emits_script() {
     assert!(
         stdout.contains("_decibri") || stdout.contains("complete"),
         "bash completion script looks wrong: first 200 chars = {:?}",
-        &stdout.chars().take(200).collect::<String>()
+        stdout.chars().take(200).collect::<String>()
     );
 }
 
 #[test]
 fn devices_json_schema_synthetic() {
     // Synthetic schema check: serialize a known-shape payload and snapshot it.
-    // This avoids hardware dependence — real device lists are validated by the
-    // user manually per the hardware-test policy.
+    // This avoids hardware dependence; real device lists are validated locally.
     let payload = serde_json::json!({
         "input_devices": [
             {
