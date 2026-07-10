@@ -1,9 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Args;
 use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
-use decibri::device::{
-    enumerate_input_devices, enumerate_output_devices, DeviceInfo, OutputDeviceInfo,
-};
+use decibri::{input_devices, output_devices, MicrophoneInfo, SpeakerInfo};
 use serde::Serialize;
 
 #[derive(Args)]
@@ -21,6 +19,7 @@ pub struct DevicesArgs {
 struct DeviceJson {
     index: usize,
     name: String,
+    id: String,
     kind: &'static str,
     default: bool,
     channels: u16,
@@ -35,11 +34,12 @@ struct DevicesOutput {
     output_devices: Option<Vec<DeviceJson>>,
 }
 
-impl From<&DeviceInfo> for DeviceJson {
-    fn from(d: &DeviceInfo) -> Self {
+impl From<&MicrophoneInfo> for DeviceJson {
+    fn from(d: &MicrophoneInfo) -> Self {
         Self {
             index: d.index,
             name: d.name.clone(),
+            id: d.id.clone(),
             kind: "input",
             default: d.is_default,
             channels: d.max_input_channels,
@@ -48,11 +48,12 @@ impl From<&DeviceInfo> for DeviceJson {
     }
 }
 
-impl From<&OutputDeviceInfo> for DeviceJson {
-    fn from(d: &OutputDeviceInfo) -> Self {
+impl From<&SpeakerInfo> for DeviceJson {
+    fn from(d: &SpeakerInfo) -> Self {
         Self {
             index: d.index,
             name: d.name.clone(),
+            id: d.id.clone(),
             kind: "output",
             default: d.is_default,
             channels: d.max_output_channels,
@@ -66,21 +67,13 @@ pub fn run(args: DevicesArgs, json: bool, quiet: bool) -> Result<()> {
     let show_output = args.output || !args.input;
 
     let input = if show_input {
-        Some(
-            enumerate_input_devices()
-                .context("failed to enumerate input devices")
-                .map_err(io_error)?,
-        )
+        Some(input_devices().context("failed to enumerate input devices")?)
     } else {
         None
     };
 
     let output = if show_output {
-        Some(
-            enumerate_output_devices()
-                .context("failed to enumerate output devices")
-                .map_err(io_error)?,
-        )
+        Some(output_devices().context("failed to enumerate output devices")?)
     } else {
         None
     };
@@ -171,11 +164,4 @@ fn print_table<'a, I: IntoIterator<Item = Row<'a>>>(rows: I) {
         ]);
     }
     println!("{table}");
-}
-
-fn io_error(e: anyhow::Error) -> anyhow::Error {
-    // Exit code 4 ("IO error") is enforced at main.rs by mapping any error
-    // tagged with this marker to ExitCode(4). For Phase 2 we surface the error;
-    // exit-code routing lands wholesale in a later phase when the table is wired.
-    e
 }

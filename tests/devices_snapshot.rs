@@ -105,6 +105,7 @@ fn devices_json_schema_synthetic() {
             {
                 "index": 0,
                 "name": "Test Mic",
+                "id": "test-mic-stable-id",
                 "kind": "input",
                 "default": true,
                 "channels": 2,
@@ -115,6 +116,7 @@ fn devices_json_schema_synthetic() {
             {
                 "index": 0,
                 "name": "Test Speakers",
+                "id": "test-speakers-stable-id",
                 "kind": "output",
                 "default": true,
                 "channels": 2,

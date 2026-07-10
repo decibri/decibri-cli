@@ -1,9 +1,9 @@
 // Hardware-independent tests for `decibri play`.
 //
-// Real playback is verified by the user manually per BUILD-PLAN's hardware-
-// test policy (capture → play round trip on the dev machine). CI exercises
-// argument validation, WAV format detection via hound round-trips, and the
-// non-existent-file error path.
+// Real playback is verified manually on real hardware (a capture and play
+// round trip on the dev machine); CI runners have no audio devices. CI
+// exercises argument validation, WAV format detection via hound
+// round-trips, and the non-existent-file error path.
 
 use std::io::Cursor;
 use std::process::Command;
@@ -32,7 +32,7 @@ fn play_help_documents_flags() {
     let output = Command::new(binary_path())
         .args(["play", "--help"])
         .output()
-        .expect("failed to execute decibri binary — run `cargo build` first");
+        .expect("failed to execute decibri binary; run `cargo build` first");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
@@ -43,11 +43,35 @@ fn play_help_documents_flags() {
         stdout.contains("--device"),
         "play --help missing --device: {stdout}"
     );
-    // v0.2.0 flags must not have leaked.
+    assert!(
+        stdout.contains("--device-id"),
+        "play --help missing --device-id: {stdout}"
+    );
+    // Flags that do not exist must not appear in help.
     assert!(
         !stdout.contains("--raw"),
-        "--raw must not appear in v0.1.0: {stdout}"
+        "--raw must not appear in play --help: {stdout}"
     );
+}
+
+// --device and --device-id are mutually exclusive; clap rejects supplying
+// both with exit code 2.
+#[test]
+fn play_rejects_device_and_device_id_together() {
+    let output = Command::new(binary_path())
+        .args([
+            "play",
+            "f.wav",
+            "--device",
+            "speakers",
+            "--device-id",
+            "some-id",
+        ])
+        .output()
+        .expect("failed to execute decibri binary");
+    assert!(!output.status.success(), "conflicting flags must error");
+    let code = output.status.code().unwrap_or(-1);
+    assert_eq!(code, 2, "expected exit 2 (invalid arguments), got {code}");
 }
 
 #[test]
@@ -103,7 +127,7 @@ fn play_routes_numeric_device_for_output() {
 }
 
 // Round-trip a 16-bit PCM WAV and verify hound reports the spec we wrote.
-// This pins the "Phase 3 capture → Phase 4 play" interop contract.
+// This pins the capture-to-play interop contract.
 #[test]
 fn hound_roundtrip_16bit_pcm() {
     let sample_rate = 16000;

@@ -4,8 +4,8 @@ expression: parsed
 ---
 {
   "audio_backend": "[backend]",
-  "decibri": "3.0.0",
-  "decibri_cli": "0.1.0",
+  "decibri": "5.0.0",
+  "decibri_cli": "0.2.0",
   "rust_version": "[rust_version]",
   "target": "[target]"
 }

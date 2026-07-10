@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD024 -->
+
 # Changelog
 
 All notable changes to decibri-cli will be documented in this file.
@@ -6,6 +8,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.2.0] - 2026-07-10
+
+### Added
+
+- `--device-id` flag on `capture` and `play`: select a device by its stable per-host ID (exact match). Mutually exclusive with `--device`.
+- `id` field in `devices --json` output: the stable per-host device ID (WASAPI endpoint ID on Windows, CoreAudio UID on macOS, ALSA pcm_id on Linux). Empty string when the host cannot assign one.
+
+### Changed
+
+- decibri library updated from 3.0.0 to 5.0.0.
+- Capture output now honors `--rate` on every device: the device is opened at its native rate and the library resamples to the requested rate, so a 48 kHz microphone recorded with `--rate 16000` produces a correct 16 kHz WAV.
+- `--channels` on `capture` accepts only `1`; capture is mono only. Any other value is rejected as an argument error (exit 2).
+- `dropped_chunks` in the `capture --json` completion payload reports the real count of capture buffers dropped while the writer could not keep up (previously always `0`). A nonzero count also prints a stderr warning. Capture completes rather than aborting when the writer falls behind.
+- Device loss is reported with the underlying failure from the library: capture exits 4 with the partial recording preserved, and playback cut short by an output-device failure exits 4 instead of reporting success.
+- Minimum supported Rust version raised to 1.88.
+
+### Removed
+
+- The writer-lag watchdog that stopped capture with exit 4 when buffering exceeded about 16 seconds. The library now bounds its capture buffer and drops the newest audio when the consumer stalls; the drop count is reported via `dropped_chunks`.
 
 ## [0.1.0] - 2026-04-12
 
@@ -40,6 +62,7 @@ Stable release of the same feature set as `0.1.0-alpha.1`. No functional changes
 - SLSA provenance attestations on every release binary via GitHub Actions.
 - `SHA256SUMS` manifest attached to every release for integrity verification.
 
-[Unreleased]: https://github.com/decibri/decibri-cli/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/decibri/decibri-cli/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/decibri/decibri-cli/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/decibri/decibri-cli/releases/tag/v0.1.0
 [0.1.0-alpha.1]: https://github.com/decibri/decibri-cli/releases/tag/v0.1.0-alpha.1

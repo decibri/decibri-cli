@@ -6,44 +6,43 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, Context, Result};
 use clap::Args;
 use console::Term;
-use crossbeam_channel::RecvTimeoutError;
-use decibri::capture::{AudioCapture, AudioChunk, CaptureConfig};
-use decibri::device::DeviceSelector;
+use decibri::{AudioChunk, DecibriError, Microphone, MicrophoneConfig};
 use hound::{SampleFormat, WavSpec, WavWriter};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::Serialize;
 
-use crate::device_resolve::{input_display_name, resolve_input_selector};
+use crate::device_resolve::{input_display_name, resolve_input};
 use crate::exit;
 
-// Watchdog high-water mark for the library's *unbounded* internal channel.
+// Capture pipeline notes.
 //
-// decibri 3.0.0's `AudioCapture::start()` hard-codes `crossbeam_channel::unbounded()`
-// and exposes only the `Receiver`. The CLI cannot inject `try_send` backpressure
-// from the producer side, so we approximate bounded behaviour from the consumer
-// side: every chunk we drain, we check `receiver.len()`; if it exceeds this
-// high-water mark, the writer has fallen too far behind, we stop the stream and
-// surface an IO error with the partial recording preserved.
+// `MicrophoneStream::next_chunk` delivers exactly the requested number of
+// interleaved samples per chunk, at the requested sample rate, on every
+// device: the library opens the device at its native rate, resamples in its
+// capture chain, and re-blocks on the consumer side. The final chunk at
+// stream close may be shorter, carrying the remaining tail, so no captured
+// sample is lost.
 //
-// 256 chunks at the default `frames_per_buffer = 1600` @ 16 kHz mono is roughly
-// 16 seconds of buffered audio — generous headroom for transient OS flushes
-// without letting a genuinely stuck writer balloon memory. Revisit when decibri
-// upstreams a `CaptureConfig::channel_capacity` option (tracked in BUILD-PLAN.md
-// "Known issues for v0.2.0").
-const WATCHDOG_HIGH_WATER: usize = 256;
+// The library's internal capture channel is bounded. If this writer loop
+// stalls long enough for the channel to fill, the library drops the newest
+// buffers and counts them; `overrun_count()` reports the total. Capture
+// completes anyway: the count is surfaced as `dropped_chunks` in the JSON
+// completion payload and as a stderr warning when nonzero.
 
-/// How long we drain the receiver after `stop()` to catch any chunks the
-/// library flushed but we hadn't yet read. Without this, the last ~100ms of
-/// audio can be lost on Ctrl+C.
-const DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
+/// Frames requested from the device per callback buffer, and the block size
+/// (times channels) requested from `next_chunk`. 1600 frames of mono 16 kHz
+/// audio is one 100 ms block.
+const FRAMES_PER_BUFFER: u32 = 1600;
 
-/// Loop poll interval. Keeps the drain loop responsive to ctrlc, duration
-/// expiry, and stream-health checks without busy-waiting.
+/// Blocking timeout for each `next_chunk` call. Keeps the loop responsive to
+/// Ctrl+C, duration expiry, and stream-health checks without busy-waiting.
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
-/// Frames per cpal callback buffer. The library default; exposed here as a
-/// constant so the watchdog comment stays in sync if it ever changes.
-const FRAMES_PER_BUFFER: u32 = 1600;
+/// Total budget for draining buffered audio after `stop()`. The library
+/// delivers the remaining full blocks, then the final short tail, then
+/// reports the stream closed; this bound only guards against a wedged
+/// stream.
+const DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
 
 #[derive(Args)]
 pub struct CaptureArgs {
@@ -56,17 +55,22 @@ pub struct CaptureArgs {
     #[arg(long, short = 'd', value_parser = parse_duration)]
     pub duration: Option<Duration>,
 
-    /// Sample rate in Hz. Default 16000 (voice). Music preset: 44100.
+    /// Sample rate in Hz. Default 16000 (voice). Output is delivered at this
+    /// rate on every device.
     #[arg(long, short = 'r', default_value_t = 16000)]
     pub rate: u32,
 
-    /// Number of channels. 1 = mono (default), 2 = stereo.
-    #[arg(long, short = 'c', default_value_t = 1)]
+    /// Number of channels. Capture is mono only; accepts 1.
+    #[arg(long, short = 'c', default_value_t = 1, value_parser = parse_channels)]
     pub channels: u16,
 
     /// Device name substring (case-insensitive) or numeric index from `decibri devices`.
     #[arg(long)]
     pub device: Option<String>,
+
+    /// Stable device ID from `decibri devices --json` (exact match).
+    #[arg(long, conflicts_with = "device")]
+    pub device_id: Option<String>,
 }
 
 pub(crate) fn parse_duration(s: &str) -> std::result::Result<Duration, String> {
@@ -77,6 +81,14 @@ pub(crate) fn parse_duration(s: &str) -> std::result::Result<Duration, String> {
         return Ok(Duration::from_secs_f64(secs));
     }
     humantime::parse_duration(s).map_err(|e| e.to_string())
+}
+
+pub(crate) fn parse_channels(s: &str) -> std::result::Result<u16, String> {
+    match s.parse::<u16>() {
+        Ok(1) => Ok(1),
+        Ok(_) => Err("capture is mono only; --channels accepts 1".into()),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[derive(Serialize)]
@@ -91,32 +103,20 @@ struct CaptureCompletion {
     dropped_chunks: u64,
 }
 
-#[derive(Debug)]
-enum ExitReason {
-    Normal,
-    Watchdog,
-    DeviceLost,
-}
-
 pub fn run(args: CaptureArgs, json: bool, quiet: bool) -> Result<()> {
-    // Pre-validate the device argument against the input device list so we
-    // can give a helpful error before touching the audio subsystem (exit 3,
-    // not 4).
-    let selector = match &args.device {
-        Some(s) => Some(resolve_input_selector(s)?),
-        None => None,
-    };
+    // Pre-validate the device flags against the input device list so a
+    // selector that matches nothing gives a helpful error before touching
+    // the audio subsystem (exit 3, not 4).
+    let selector = resolve_input(args.device.as_deref(), args.device_id.as_deref())?;
+    let device_name = input_display_name(args.device.as_deref(), args.device_id.as_deref());
 
-    let device_name = input_display_name(args.device.as_deref());
+    let mut config = MicrophoneConfig::default();
+    config.sample_rate = args.rate;
+    config.channels = args.channels;
+    config.frames_per_buffer = FRAMES_PER_BUFFER;
+    config.device = selector;
 
-    let config = CaptureConfig {
-        sample_rate: args.rate,
-        channels: args.channels,
-        frames_per_buffer: FRAMES_PER_BUFFER,
-        device: selector.unwrap_or(DeviceSelector::Default),
-    };
-
-    let capture = AudioCapture::new(config).map_err(|e| anyhow!("capture init failed: {e}"))?;
+    let microphone = Microphone::new(config).map_err(|e| anyhow!("capture init failed: {e}"))?;
 
     let spec = WavSpec {
         channels: args.channels,
@@ -129,14 +129,14 @@ pub fn run(args: CaptureArgs, json: bool, quiet: bool) -> Result<()> {
         .map_err(|e| exit::io(format!("{e:#}")))?;
 
     // Install ctrlc handler. Idempotent across runs but `set_handler` errors
-    // if called twice in the same process — fine to ignore in tests/REPLs.
+    // if called twice in the same process. Fine to ignore in tests/REPLs.
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_handler = shutdown.clone();
     let _ = ctrlc::set_handler(move || {
         shutdown_handler.store(true, Ordering::SeqCst);
     });
 
-    let stream = capture
+    let stream = microphone
         .start()
         .map_err(|e| exit::io(format!("capture start failed: {e}")))?;
 
@@ -158,10 +158,13 @@ pub fn run(args: CaptureArgs, json: bool, quiet: bool) -> Result<()> {
         None
     };
 
+    // Interleaved samples per next_chunk block: frames times channels.
+    let block_samples = FRAMES_PER_BUFFER as usize * args.channels as usize;
+
     let started = Instant::now();
     let mut samples_written: u64 = 0;
-    let mut exit_reason = ExitReason::Normal;
-    let receiver = stream.receiver().clone();
+    let mut device_lost = false;
+    let mut close_error: Option<DecibriError> = None;
 
     loop {
         if shutdown.load(Ordering::SeqCst) {
@@ -172,48 +175,63 @@ pub fn run(args: CaptureArgs, json: bool, quiet: bool) -> Result<()> {
                 break;
             }
         }
-        if !stream.is_open() && receiver.is_empty() {
-            exit_reason = ExitReason::DeviceLost;
-            break;
-        }
 
-        match receiver.recv_timeout(POLL_INTERVAL) {
-            Ok(chunk) => {
+        match stream.next_chunk(block_samples, Some(POLL_INTERVAL)) {
+            Ok(Some(chunk)) => {
                 samples_written +=
                     write_chunk(&mut writer, &chunk).map_err(|e| exit::io(format!("{e:#}")))?;
                 if let Some(pb) = &progress {
                     update_progress(pb, started.elapsed(), args.duration, samples_written);
                 }
-                if receiver.len() > WATCHDOG_HIGH_WATER {
-                    exit_reason = ExitReason::Watchdog;
-                    break;
-                }
             }
-            Err(RecvTimeoutError::Timeout) => continue,
-            Err(RecvTimeoutError::Disconnected) => {
-                exit_reason = ExitReason::DeviceLost;
+            // Timeout with the stream still open: loop to re-check Ctrl+C
+            // and duration expiry.
+            Ok(None) => continue,
+            // The stream ended without a local stop: a device or driver
+            // failure. The library has already delivered every buffered
+            // block and the final tail before reporting closed.
+            Err(err) => {
+                close_error = match err {
+                    DecibriError::MicrophoneStreamClosed => None,
+                    other => Some(other),
+                };
+                device_lost = true;
                 break;
             }
         }
     }
 
-    // Cooperative shutdown: stop the producer flag, drain remaining buffered
-    // chunks for up to DRAIN_TIMEOUT (skipped on watchdog trip — point of the
-    // trip is "writer can't keep up", so adding more chunks is wrong).
+    // Cooperative shutdown: stop the stream, then drain what the library
+    // still holds. The closed path delivers remaining full blocks and the
+    // final short tail before reporting `MicrophoneStreamClosed`.
     stream.stop();
-    if matches!(exit_reason, ExitReason::Normal) {
-        let drain_start = Instant::now();
-        while drain_start.elapsed() < DRAIN_TIMEOUT {
-            match receiver.recv_timeout(Duration::from_millis(50)) {
-                Ok(chunk) => {
+    if !device_lost {
+        let drain_deadline = Instant::now() + DRAIN_TIMEOUT;
+        loop {
+            match stream.next_chunk(block_samples, Some(POLL_INTERVAL)) {
+                Ok(Some(chunk)) => {
                     samples_written +=
                         write_chunk(&mut writer, &chunk).map_err(|e| exit::io(format!("{e:#}")))?;
+                }
+                Ok(None) => {
+                    if Instant::now() >= drain_deadline {
+                        break;
+                    }
                 }
                 Err(_) => break,
             }
         }
     }
-    drop(stream); // cpal Stream stops on Drop.
+
+    let dropped_chunks = stream.overrun_count();
+    // A driver failure recorded by the library takes precedence as the
+    // device-loss cause; fall back to the error `next_chunk` surfaced.
+    let close_cause = if device_lost {
+        stream.take_last_error().or(close_error)
+    } else {
+        None
+    };
+    drop(stream);
 
     let elapsed = started.elapsed();
     let finalize_result = writer
@@ -227,25 +245,21 @@ pub fn run(args: CaptureArgs, json: bool, quiet: bool) -> Result<()> {
 
     finalize_result?;
 
-    match exit_reason {
-        ExitReason::DeviceLost => {
-            return Err(exit::io(format!(
-                "audio device became unavailable during capture. \
-                 Partial recording preserved at {} ({:.1}s captured)",
-                args.output.display(),
-                elapsed.as_secs_f64()
-            )));
-        }
-        ExitReason::Watchdog => {
-            return Err(exit::io(format!(
-                "writer could not keep up with capture (>{} chunks buffered). \
-                 Partial recording preserved at {} ({:.1}s captured)",
-                WATCHDOG_HIGH_WATER,
-                args.output.display(),
-                elapsed.as_secs_f64()
-            )));
-        }
-        ExitReason::Normal => {}
+    if dropped_chunks > 0 {
+        eprintln!(
+            "warning: {dropped_chunks} capture buffer(s) dropped because the writer could not \
+             keep up; the recording is missing that audio"
+        );
+    }
+
+    if device_lost {
+        let detail = close_cause.map(|e| format!(" ({e})")).unwrap_or_default();
+        return Err(exit::io(format!(
+            "audio device became unavailable during capture{detail}. \
+             Partial recording preserved at {} ({:.1}s captured)",
+            args.output.display(),
+            elapsed.as_secs_f64()
+        )));
     }
 
     let bytes = samples_written * 2; // i16 = 2 bytes per sample
@@ -264,7 +278,7 @@ pub fn run(args: CaptureArgs, json: bool, quiet: bool) -> Result<()> {
             samples: samples_written,
             bytes,
             device: device_name,
-            dropped_chunks: 0,
+            dropped_chunks,
         };
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else if !quiet {
@@ -291,7 +305,7 @@ fn write_chunk<W: std::io::Write + std::io::Seek>(
     Ok(chunk.data.len() as u64)
 }
 
-/// Standard lossy f32 → i16 PCM conversion. Clamp protects against the rare
+/// Standard lossy f32 to i16 PCM conversion. Clamp protects against the rare
 /// out-of-range sample (some audio backends overshoot slightly under load).
 pub(crate) fn f32_to_i16(sample: f32) -> i16 {
     (sample.clamp(-1.0, 1.0) * f32::from(i16::MAX)) as i16
