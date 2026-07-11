@@ -218,7 +218,7 @@ Scripts can rely on these. They are part of the stable CLI contract.
 | 1 | Generic error (unsupported WAV format, corrupt file, audio subsystem failure) |
 | 2 | Invalid arguments (handled by clap) |
 | 3 | Device not found (`--device` given but no match) |
-| 4 | IO error (file not found, disk full, permission denied, audio device lost mid-capture) |
+| 4 | IO error (file not found, disk full, permission denied, audio device lost mid-capture or mid-playback) |
 
 ## Supported platforms
 

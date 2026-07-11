@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `decibri play` no longer hangs if the output device is lost mid-playback or when Ctrl+C arrives while playback backpressure is applied; it now stops promptly and, on device loss, exits 4 with a clear message.
+
 ## [0.2.1] - 2026-07-11
 
 ### Changed

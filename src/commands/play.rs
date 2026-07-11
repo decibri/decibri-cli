@@ -1,8 +1,9 @@
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::thread;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
@@ -18,9 +19,11 @@ use crate::exit;
 
 /// Number of samples (across all channels) we ship to the library per `send()`
 /// call. 4096 interleaved samples is ~256ms at 16 kHz mono or ~46ms at
-/// 44.1 kHz stereo: small enough to keep Ctrl+C latency low (we only check
-/// the shutdown flag between sends), large enough to keep channel/syscall
-/// overhead negligible. The library's internal channel is bounded at 32, so
+/// 44.1 kHz stereo: large enough to keep channel/syscall overhead negligible,
+/// small enough for smooth progress updates. Interrupt latency does not depend
+/// on the chunk size: Ctrl+C stops the stream, which immediately unblocks even
+/// a send parked on backpressure, so teardown is bounded by stream shutdown,
+/// not by a chunk time. The library's internal channel is bounded at 32, so
 /// the maximum in-flight backlog is ~8s of voice audio.
 const FEED_CHUNK_SAMPLES: usize = 4096;
 
@@ -81,16 +84,26 @@ pub fn run(args: PlayArgs, json: bool, quiet: bool) -> Result<()> {
 
     let output = Speaker::new(config).map_err(|e| anyhow!("output init failed: {e}"))?;
 
-    // ctrlc handler: flip an AtomicBool observed by the feed loop.
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let shutdown_handler = shutdown.clone();
-    let _ = ctrlc::set_handler(move || {
-        shutdown_handler.store(true, Ordering::SeqCst);
-    });
+    let stream = Arc::new(
+        output
+            .start()
+            .map_err(|e| exit::io(format!("output start failed: {e}")))?,
+    );
 
-    let stream = output
-        .start()
-        .map_err(|e| exit::io(format!("output start failed: {e}")))?;
+    // Ctrl+C: flip the shutdown flag AND stop the stream. Stopping releases
+    // the device and disconnects the playback channel, which unblocks the
+    // feeder thread even when it is parked inside a backpressured send or
+    // drain. The handler holds its own Arc clone of the stream; stop() is
+    // idempotent.
+    let shutdown = Arc::new(AtomicBool::new(false));
+    {
+        let shutdown_handler = shutdown.clone();
+        let stream_handler = stream.clone();
+        let _ = ctrlc::set_handler(move || {
+            shutdown_handler.store(true, Ordering::SeqCst);
+            stream_handler.stop();
+        });
+    }
 
     if !json && !quiet {
         let fmt_name = match spec.sample_format {
@@ -115,38 +128,70 @@ pub fn run(args: PlayArgs, json: bool, quiet: bool) -> Result<()> {
         None
     };
 
-    // Feed loop. `stream.send()` blocks on backpressure against the library's
-    // bounded channel (capacity 32), so this naturally throttles to the audio
-    // playback rate: no sleep, no manual pacing. We only check the shutdown
-    // flag between sends, so worst-case Ctrl+C latency is one chunk-time.
-    let mut fed: u64 = 0;
-    let mut interrupted = false;
-    for chunk in samples.chunks(FEED_CHUNK_SAMPLES) {
-        if shutdown.load(Ordering::SeqCst) {
-            interrupted = true;
+    // Feeder thread. It owns a SpeakerSink (a Send + Sync + Clone handle to
+    // the playback channel) and runs the blocking send loop off the main
+    // thread, so the main thread stays free to orchestrate shutdown. A parked
+    // send is released when the stream is stopped (by the Ctrl+C handler or
+    // by the device-death handling below): send() then returns
+    // SpeakerStreamClosed and the thread ends. On normal EOF the feeder also
+    // drains the queued tail here, on this thread, so the main thread keeps
+    // watching the stream during the drain and a device lost at any point
+    // (including while drain itself is parked on the full channel) is still
+    // observed and released. `fed` is tracked in a shared atomic so the
+    // played-sample count survives regardless of how the thread ends.
+    let sink = stream.sink();
+    let fed_shared = Arc::new(AtomicU64::new(0));
+    let feeder = {
+        let shutdown = shutdown.clone();
+        let progress = progress.clone();
+        let fed_shared = fed_shared.clone();
+        thread::spawn(move || {
+            for chunk in samples.chunks(FEED_CHUNK_SAMPLES) {
+                if shutdown.load(Ordering::SeqCst) {
+                    return;
+                }
+                match sink.send(chunk.to_vec()) {
+                    Ok(()) => {
+                        let fed = fed_shared.fetch_add(chunk.len() as u64, Ordering::Relaxed)
+                            + chunk.len() as u64;
+                        if let Some(pb) = &progress {
+                            pb.set_position(fed);
+                        }
+                    }
+                    Err(_) => return,
+                }
+            }
+            // Normal EOF: block until the queued tail has played. Returns
+            // early if the stream is stopped or fails in the meantime.
+            sink.drain();
+        })
+    };
+
+    // Orchestration. Wait for the feeder while watching for a device failure.
+    // The feeder finishes on normal EOF (after draining the tail), when a
+    // send returns closed after a stop(), or when it sees the shutdown flag.
+    // Device death flips is_playing() to false via the library's error
+    // callback but does not by itself unblock a parked send or drain, so the
+    // main thread observes it and calls stop(), which disconnects the channel,
+    // releases the device, and ends the feeder.
+    while !feeder.is_finished() {
+        if !stream.is_playing() {
+            stream.stop();
             break;
         }
-        stream
-            .send(chunk.to_vec())
-            .map_err(|e| exit::io(format!("output send failed: {e}")))?;
-        fed += chunk.len() as u64;
-        if let Some(pb) = &progress {
-            pb.set_position(fed);
-        }
+        thread::sleep(Duration::from_millis(50));
     }
+    let _ = feeder.join();
+    let fed = fed_shared.load(Ordering::Relaxed);
 
-    // Finish: drain on normal EOF (blocks until audio fully played out), stop
-    // on Ctrl+C (discards pending samples immediately and goes silent). A
-    // device failure mid-playback ends the stream early; `drain()` returns
-    // instead of blocking, and the library records the typed cause, read
-    // below via `take_last_error()`.
-    if interrupted {
-        stream.stop();
-    } else {
-        stream.drain();
-    }
+    let interrupted = shutdown.load(Ordering::SeqCst);
+
+    // Release the device in every path. On Ctrl+C the handler already stopped
+    // the stream, and on device death the loop above did; stop() is
+    // idempotent. On normal EOF the feeder has drained the queued tail, so
+    // nothing audible is discarded.
+    stream.stop();
     let playback_error = stream.take_last_error();
-    drop(stream);
 
     if let Some(pb) = progress {
         pb.finish_and_clear();
@@ -158,7 +203,7 @@ pub fn run(args: PlayArgs, json: bool, quiet: bool) -> Result<()> {
         )));
     }
 
-    let played = if interrupted { fed } else { total_samples };
+    let played = played_samples(interrupted, fed, total_samples);
     let played_duration = samples_to_seconds(played, spec.sample_rate, spec.channels);
 
     if json {
@@ -207,6 +252,17 @@ fn i16_to_f32(sample: i16) -> f32 {
     f32::from(sample) / f32::from(i16::MAX)
 }
 
+/// Samples reported as played. An interrupted run reports the fed count (what
+/// reached the playback queue before the stop); a normal completion drained
+/// the queue, so the whole file played.
+fn played_samples(interrupted: bool, fed: u64, total_samples: u64) -> u64 {
+    if interrupted {
+        fed
+    } else {
+        total_samples
+    }
+}
+
 fn samples_to_seconds(samples: u64, sample_rate: u32, channels: u16) -> f64 {
     if sample_rate == 0 || channels == 0 {
         return 0.0;
@@ -239,6 +295,14 @@ mod tests {
         // This is the standard lossy round-trip; not a bug.
         let min = i16_to_f32(i16::MIN);
         assert!(min <= -1.0 && min > -1.001, "unexpected min: {min}");
+    }
+
+    #[test]
+    fn played_samples_selection() {
+        // Interrupted: report what was fed before the stop.
+        assert_eq!(played_samples(true, 4096, 16000), 4096);
+        // Normal completion: the drain played everything, report the full file.
+        assert_eq!(played_samples(false, 4096, 16000), 16000);
     }
 
     #[test]
