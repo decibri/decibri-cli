@@ -2,7 +2,7 @@ name: Release Dry-Run
 
 # Manually triggered smoke test of the build matrix. Validates that all 5
 # targets compile, that the aarch64-linux cross toolchain is correctly set
-# up, and that the universal2 lipo-merge produces a working binary — without
+# up, and that the universal2 lipo-merge produces a working binary, without
 # creating a GitHub Release, tagging anything, or running provenance attest
 # (which is slow and only matters for real releases).
 on:
