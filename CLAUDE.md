@@ -32,9 +32,10 @@ All commits, tags, and registry publishes are performed manually. If a task appe
 The CLI is built on the `decibri` Rust audio library. The pinned version is in `Cargo.toml`. Current facts:
 
 - The CLI is synchronous. No async runtime.
-- Default decibri features are trimmed to `capture` and `playback` only.
+- Default decibri features are trimmed to `capture`, `playback`, and `gain` only. The `gain` feature is pure DSP and pulls no dependencies.
 - Capture is mono only; `--channels` accepts only `1`.
 - Capture requests audio at the rate set by `--rate`. The device opens at its native rate and the library resamples to the requested rate.
+- Capture conditioning is opt-in: `--dc-removal`, `--highpass` (cutoffs 80 or 100 Hz), `--agc`, and `--limiter` map one-to-one to `MicrophoneConfig` fields. The agc and limiter stages are honoured only under the `gain` feature; dc removal and the high-pass need no feature.
 
 ## Code Quality
 

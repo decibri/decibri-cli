@@ -125,6 +125,10 @@ Record audio from an input device to a WAV file.
 | `--channels <N>` | `-c` | `1` | Mono only. Values other than 1 are rejected. |
 | `--device <NAME_OR_INDEX>` | | default input | Device name substring (case-insensitive) or numeric index from `decibri devices` |
 | `--device-id <ID>` | | unset | Exact device id from `decibri devices --json`. Mutually exclusive with `--device`. |
+| `--dc-removal` | | off | Remove a constant DC offset from the captured signal |
+| `--highpass <HZ>` | | off | Apply a high-pass filter at the given cutoff in Hz (removes low-frequency rumble). Supported cutoffs: 80, 100. |
+| `--agc <DBFS>` | | off | Automatic gain control to the given target level in dBFS. Range: -40 to -3 (for example -20). |
+| `--limiter <DBFS>` | | off | Peak limiter ceiling in dBFS. Range: -3.0 to 0.0 (for example -1). |
 
 Output is always 16-bit PCM WAV. Ctrl+C produces a valid truncated WAV, not a corrupt file. Long recordings have stable memory usage: a 60-minute capture does not grow RSS unboundedly.
 
@@ -142,6 +146,9 @@ decibri capture -o yeti.wav -d 10 --device "yeti"
 
 # Record from device index 2
 decibri capture -o mic2.wav -d 10 --device 2
+
+# Clean, leveled capture for ASR input
+decibri capture -o speech.wav -r 16000 --highpass 80 --agc -20
 
 # Record until Ctrl+C, suppress progress output
 decibri capture -o long.wav --quiet
@@ -231,7 +238,7 @@ Scripts can rely on these. They are part of the stable CLI contract.
 
 ## How it works
 
-`decibri-cli` is a thin shell over the [`decibri`](https://github.com/decibri/decibri) Rust audio library. Device enumeration and the audio streams come from the library; the CLI adds argument parsing (clap), WAV I/O (hound), progress bars (indicatif), and the exit-code table. The release binary is compiled with `opt-level = "z"`, link-time optimization, and `panic = "abort"`, the standard Rust size-shrinking profile. Default decibri features are trimmed to `capture` and `playback` only, which keeps the binary small.
+`decibri-cli` is a thin shell over the [`decibri`](https://github.com/decibri/decibri) Rust audio library. Device enumeration and the audio streams come from the library; the CLI adds argument parsing (clap), WAV I/O (hound), progress bars (indicatif), and the exit-code table. The release binary is compiled with `opt-level = "z"`, link-time optimization, and `panic = "abort"`, the standard Rust size-shrinking profile. Default decibri features are trimmed to `capture`, `playback`, and `gain` only, which keeps the binary small (`gain` is pure DSP and pulls no dependencies).
 
 Capture pulls requested-rate audio from the library a block at a time and streams it into a `hound::WavWriter`. The device opens at its native rate and the library resamples to the rate you ask for with `--rate`, so the output file always matches the requested rate. If the writer cannot keep up, the library drops the newest audio rather than growing memory without bound; the number of dropped blocks is reported as `dropped_chunks`, and a warning is printed to stderr when it is nonzero, so a long capture on a slow disk completes with an accurate record of any loss instead of failing. Ctrl+C triggers a cooperative shutdown that drains the remaining audio, finalizes the WAV header, and exits with code 0.
 
