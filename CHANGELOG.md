@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-11
+
+### Changed
+
+- Release plumbing only: republish 0.2.0's content under 0.2.1 so the crate and npm packages ship together through trusted publishing. No functional change from 0.2.0.
+
 ## [0.2.0] - 2026-07-11
 
 ### Added
@@ -66,7 +72,8 @@ Stable release of the same feature set as `0.1.0-alpha.1`. No functional changes
 - SLSA provenance attestations on every release binary via GitHub Actions.
 - `SHA256SUMS` manifest attached to every release for integrity verification.
 
-[Unreleased]: https://github.com/decibri/decibri-cli/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/decibri/decibri-cli/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/decibri/decibri-cli/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/decibri/decibri-cli/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/decibri/decibri-cli/releases/tag/v0.1.0
 [0.1.0-alpha.1]: https://github.com/decibri/decibri-cli/releases/tag/v0.1.0-alpha.1
