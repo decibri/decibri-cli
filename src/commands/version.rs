@@ -7,8 +7,7 @@ const TARGET: &str = env!("TARGET_TRIPLE");
 
 // Compile-time mapping because cpal::default_host() is selected by target_os
 // with default features. If cpal is ever built with non-default features
-// (e.g., JACK on Linux), this will drift; revisit by upstreaming a public
-// host-name accessor into the decibri library.
+// (e.g., JACK on Linux), this mapping will drift.
 const AUDIO_BACKEND: &str = if cfg!(target_os = "windows") {
     "WASAPI"
 } else if cfg!(target_os = "macos") {

@@ -1,6 +1,6 @@
-# CLAUDE.md — decibri-cli
+# CLAUDE.md (decibri-cli)
 
-This file tells Claude Code how to work in this repo. The canonical architectural reference is [BUILD-PLAN.md](./BUILD-PLAN.md). Consult it for the phased work order, dependency list, and decision record before making non-trivial changes.
+This file tells Claude Code how to work in this repo. This file, together with README.md and CONTRIBUTING.md, describes how to work here.
 
 ## Guardrails
 
@@ -20,9 +20,21 @@ All commits, tags, and registry publishes are performed manually. If a task appe
 - Run tests, builds, linters, and formatters locally
 - Modify any source file outside `.github/workflows/`
 
-## Pre-Phase-0 research gate
+**Standing conventions:**
 
-Do not start coding until the `decibri` 3.0.0 capture API has been read at `https://docs.rs/decibri/3.0.0/decibri/capture/` and the sync/async question is answered. This determines whether the CLI needs `tokio` and is the single biggest design choice. See BUILD-PLAN.md §2 "Assumptions to verify before coding."
+- PRs squash-merge into `main`.
+- Commit messages and PR titles use Conventional Commits.
+- The CLA check runs on every PR; first-time contributors agree via a PR comment.
+- Committed files (README, CHANGELOG, code comments) state what IS, in the present tense. No roadmap content, planned features, or strategic rationale.
+
+## decibri library
+
+The CLI is built on the `decibri` Rust audio library. The pinned version is in `Cargo.toml`. Current facts:
+
+- The CLI is synchronous. No async runtime.
+- Default decibri features are trimmed to `capture` and `playback` only.
+- Capture is mono only; `--channels` accepts only `1`.
+- Capture requests audio at the rate set by `--rate`. The device opens at its native rate and the library resamples to the requested rate.
 
 ## Code Quality
 
@@ -36,10 +48,10 @@ Do not start coding until the `decibri` 3.0.0 capture API has been read at `http
 
 ## API Compatibility
 
-The CLI's user-facing contract is frozen after v0.1.0 ships. Breaking changes require a major version bump.
+The CLI's user-facing contract (subcommand names, flag names, argument shapes, exit codes, and the `version --json` schema) is stable. Breaking changes are noted in CHANGELOG.md and bump the version; before 1.0.0 they bump the minor version.
 
-- **Subcommand names, flag names, and argument shapes** are the contract. Do not rename `--output` to `--out`, do not change `decibri capture` to `decibri record`, without an explicit major-version plan.
-- **Exit codes** are a documented contract. See BUILD-PLAN.md for the exit code table (0 success, 1 generic error, 2 bad args, 3 device not found, 4 IO error). Script users depend on these.
+- **Subcommand names, flag names, and argument shapes** are the contract. Do not rename `--output` to `--out`, do not change `decibri capture` to `decibri record`, without an explicit version plan.
+- **Exit codes** are a documented contract: 0 success, 1 generic error, 2 bad args, 3 device not found, 4 IO error. Script users depend on these.
 - **`version --json` schema** is locked at v0.1.0 to `{decibri_cli, decibri, audio_backend, target, rust_version}`. An `insta` snapshot test pins it. Do not add, remove, or rename fields without explicit approval.
 - **Other JSON outputs** (`devices --json`, etc.) are explicitly marked unstable until v1.0.0. Changes are allowed but should be documented in CHANGELOG.md.
 

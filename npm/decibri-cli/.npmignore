@@ -1,4 +1,4 @@
-# Tests — not needed in the published package.
+# Tests: not needed in the published package.
 tests/
 
 # Downloaded artifacts (install.js regenerates these on every install).

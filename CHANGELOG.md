@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `--device-id` flag on `capture` and `play`: select a device by its stable per-host ID (exact match). Mutually exclusive with `--device`.
+- Version-parity test (`tests/version_parity.rs`): `cargo test` fails if the crate version and the npm wrapper version diverge.
+- Contributor License Agreement section in CONTRIBUTING.md describing the CLA check that runs on every pull request.
 - `id` field in `devices --json` output: the stable per-host device ID (WASAPI endpoint ID on Windows, CoreAudio UID on macOS, ALSA pcm_id on Linux). Empty string when the host cannot assign one.
 
 ### Changed
@@ -24,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `dropped_chunks` in the `capture --json` completion payload reports the real count of capture buffers dropped while the writer could not keep up (previously always `0`). A nonzero count also prints a stderr warning. Capture completes rather than aborting when the writer falls behind.
 - Device loss is reported with the underlying failure from the library: capture exits 4 with the partial recording preserved, and playback cut short by an output-device failure exits 4 instead of reporting success.
 - Minimum supported Rust version raised to 1.88.
+- Documentation corrected for 0.2.0 behavior (versions, mono-only capture, `--device-id`, resampled capture pipeline) and cleaned of roadmap and tool-comparison content.
+- Release verification instructions corrected: provenance attestations cover the extracted `decibri` binary, not the release archive.
 
 ### Removed
 
@@ -55,7 +59,7 @@ Stable release of the same feature set as `0.1.0-alpha.1`. No functional changes
   - Unsupported formats (24-bit, 8-bit, non-PCM codecs) exit 1 with a clear error.
   - Ctrl+C mid-playback exits 0 with `"interrupted": true` in JSON output.
 - Global flags `--json` and `--quiet` on all subcommands.
-- Hidden `decibri completions <shell>` plumbing via `clap_complete`. Shell completion generation ships publicly in v0.3.0; the subcommand is wired now so it is an additive change later.
+- Hidden `decibri completions <shell>` plumbing via `clap_complete`. The subcommand is wired but not exposed in help output.
 - Documented exit code table: 0 success, 1 generic error, 2 invalid arguments, 3 device not found, 4 IO error.
 - Cross-platform release pipeline building Windows x86_64, Linux x86_64, Linux aarch64, macOS x86_64, macOS aarch64, and a macOS universal2 binary.
 - npm distribution via `npm install -g decibri-cli`. The postinstall script downloads the platform binary from the matching GitHub Release, verifies its SHA256 against the release manifest, and places it on the user's PATH.

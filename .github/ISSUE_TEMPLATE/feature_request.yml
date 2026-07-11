@@ -8,7 +8,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to suggest a feature. Before filing, please check the roadmap in [README.md](https://github.com/decibri/decibri-cli#roadmap) — some features are already planned for v0.2.0 or v0.3.0.
+        Thanks for taking the time to suggest a feature. Before filing, please check the [issue tracker](https://github.com/decibri/decibri-cli/issues) for existing requests.
 
   - type: textarea
     id: problem
@@ -42,7 +42,7 @@ body:
     id: scope
     attributes:
       label: Version scope
-      description: Is this a small addition (v0.1.x patch), a new feature (v0.2.0+), or a breaking change (v1.0.0)? Best guess is fine.
+      description: Is this a small addition, a new feature, or a breaking change to existing commands? Best guess is fine.
     validations:
       required: false
 

@@ -7,7 +7,7 @@
 // package's version, verifies its SHA256, extracts it, and places it next
 // to the JS shim at bin/decibri-bin (or .exe on Windows).
 //
-// Zero npm dependencies — this script runs before any deps are available,
+// Zero npm dependencies: this script runs before any deps are available,
 // so everything uses Node stdlib (https, crypto, fs, child_process).
 
 const fs = require('node:fs');
@@ -224,7 +224,7 @@ async function main() {
     console.error(`[decibri-cli] archive: ${archive}`);
 
     // 1. Download SHA256SUMS first. If the release doesn't exist, this is
-    //    where we find out — before pulling down a multi-MB tarball.
+    //    where we find out, before pulling down a multi-MB tarball.
     let checksumsText;
     try {
         const buf = await downloadWithRetry(checksumsUrl, 'SHA256SUMS');
@@ -266,8 +266,8 @@ async function main() {
     }
 
     // 3. Verify SHA256. On mismatch, delete and redownload once before
-    //    failing — covers transient CDN corruption without silently accepting
-    //    mismatched binaries.
+    //    failing; this covers transient CDN corruption without silently
+    //    accepting mismatched binaries.
     let actualHash = sha256(archiveBuf);
     if (actualHash !== expectedHash) {
         console.error(
@@ -325,7 +325,7 @@ async function main() {
         fs.chmodSync(destPath, 0o755);
     }
 
-    // 5. Cleanup temporary files. Keep nothing around for debugging — if
+    // 5. Cleanup temporary files. Keep nothing around for debugging: if
     //    reinstall is needed, re-download is cheap.
     fs.rmSync(archivePath, { force: true });
     fs.rmSync(tmpExtractDir, { recursive: true, force: true });

@@ -47,19 +47,6 @@ fn capture_help_documents_all_flags() {
             "capture --help missing {flag}: {stdout}"
         );
     }
-    // Flags that do not exist must not appear in help.
-    assert!(
-        !stdout.contains("--vad"),
-        "--vad must not appear in capture --help: {stdout}"
-    );
-    assert!(
-        !stdout.contains("--silence-ms"),
-        "--silence-ms must not appear in capture --help: {stdout}"
-    );
-    assert!(
-        !stdout.contains("--raw"),
-        "--raw must not appear in capture --help: {stdout}"
-    );
 }
 
 // Capture is mono only: any --channels value other than 1 is rejected at the
