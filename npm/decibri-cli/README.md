@@ -30,7 +30,7 @@ decibri version                            # Show version info
 The npm package is a thin wrapper. On install, a postinstall script
 downloads the platform-appropriate binary from the GitHub Release matching
 this package version, verifies its SHA256, and places it on your PATH. No
-Node.js is needed at runtime — once installed, `decibri` is a standalone
+Node.js is needed at runtime; once installed, `decibri` is a standalone
 binary.
 
 ## Links

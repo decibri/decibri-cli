@@ -17,7 +17,7 @@ body:
     attributes:
       label: decibri-cli version
       description: Paste the output of `decibri version` (or `decibri version --json`).
-      placeholder: decibri-cli 0.1.0 / decibri 3.0.0 / ...
+      placeholder: decibri-cli 0.2.0 / decibri 5.0.0 / ...
     validations:
       required: true
 
@@ -88,6 +88,6 @@ body:
     id: additional
     attributes:
       label: Additional context
-      description: Anything else that might help — device names, unusual audio setup, CI runner details, screenshots of GUI issues, etc.
+      description: Anything else that might help. Device names, unusual audio setup, CI runner details, screenshots of GUI issues, etc.
     validations:
       required: false

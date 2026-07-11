@@ -25,7 +25,7 @@ Open an issue using the Feature Request template. Explain:
 - Your proposed solution (if you have one)
 - Alternatives you considered
 
-Scope-note: v0.1.x is focused on the core command surface. Features flagged for v0.2.0 (VAD, raw PCM piping, diagnostics) or v0.3.0 (Homebrew/Scoop, config files) already have homes on the roadmap — we'd still appreciate an issue describing your use case, but code contributions for those features should wait until the relevant version milestone is open.
+Please open an issue describing your use case before submitting a large feature PR, so we can align on scope first.
 
 ## How to contribute code
 
@@ -56,13 +56,12 @@ Scope-note: v0.1.x is focused on the core command surface. Features flagged for 
 - Performance improvements with a measurement
 - Small refactors that reduce code without changing behaviour
 
-### What we don't accept for v0.1.x
+### What we don't accept
 
-- Features explicitly deferred to v0.2.0 (VAD, raw PCM piping, `decibri test`)
-- New audio format support beyond WAV (deferred to v0.2.0+)
+- Large new features or new audio formats beyond WAV without a prior issue and scope discussion
 - Breaking changes to the CLI contract (subcommand names, flag names, exit codes, `version --json` schema) until v1.0.0
-- Adding async runtimes (`tokio`, `async-std`) — the CLI is intentionally sync
-- Adding `env_logger` / `tracing` — stderr output is UI, not logs, in v0.1.x
+- Adding async runtimes (`tokio`, `async-std`): the CLI is intentionally sync
+- Adding `env_logger` / `tracing`: stderr output is UI, not logs
 
 ## Development setup
 
@@ -99,6 +98,8 @@ cd npm/decibri-cli && node --test tests/*.test.js   # npm wrapper tests
 
 The Rust tests are hardware-independent and run in CI. Manual hardware tests (real microphone / speaker) are local-only because CI runners don't have audio devices.
 
+The crate version in `Cargo.toml` and the npm wrapper version in `npm/decibri-cli/package.json` must match; a test in `tests/version_parity.rs` fails `cargo test` if they diverge.
+
 ### Snapshot tests
 
 Some tests use [`insta`](https://insta.rs) for snapshot assertions. If you add a test or change snapshot-producing output, run:
@@ -107,7 +108,7 @@ Some tests use [`insta`](https://insta.rs) for snapshot assertions. If you add a
 cargo insta review
 ```
 
-to approve changes after manual inspection. Do **not** blindly accept snapshots with `cargo insta accept` — review them first.
+to approve changes after manual inspection. Do **not** blindly accept snapshots with `cargo insta accept`; review them first.
 
 ## Project structure
 
@@ -133,6 +134,18 @@ decibri-cli/
 ├── CHANGELOG.md
 └── README.md
 ```
+
+## Contributor License Agreement
+
+Before your first contribution can be merged, we ask you to agree to the decibri Contributor License Agreement. It is a one-time step that lets the project include your work under its current and future licenses, with clear provenance, and it does not take away your copyright in what you contribute. You are welcome to read the full agreements first: the [Individual CLA](https://github.com/decibri/decibri-cla-action/blob/main/agreements/Individual-CLA-v1.md) and, for contributions made on behalf of a company, the [Corporate CLA](https://github.com/decibri/decibri-cla-action/blob/main/agreements/Corporate-CLA-v1.md).
+
+When you open a pull request, an automated check looks at whether you are already covered. If you are not, it leaves a comment with a short sentence to agree to. Reply with that exact sentence as a comment on your own pull request, and the check turns green. Until the check passes, the pull request cannot be merged.
+
+If you are contributing as part of your work, your employer may need a Corporate CLA on file instead of an individual one. If that applies, or the check asks about it, contact the maintainers and we will sort it out.
+
+The record we keep is deliberately minimal: your GitHub username and account ID, which version of the agreement you agreed to, and the date. How we handle that information, and how to request its removal, is set out in our [Privacy Policy](https://decibri.com/privacy).
+
+The CLA covers your contributions across the decibri organisation's repositories, so you only need to agree once.
 
 ## License
 

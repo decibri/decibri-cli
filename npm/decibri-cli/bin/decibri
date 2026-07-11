@@ -11,7 +11,7 @@
 // This pattern is how esbuild, turbo, biome, TypeScript, and most other
 // native-binary-in-npm packages handle cross-platform `bin` entries. A plain
 // shell-script shim would fail on Windows because npm's cmd-shim can only
-// dispatch via node, sh, or bash — and sh is not reliably on Windows PATH.
+// dispatch via node, sh, or bash, and sh is not reliably on Windows PATH.
 
 const fs = require('node:fs');
 const path = require('node:path');

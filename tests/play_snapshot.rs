@@ -47,11 +47,6 @@ fn play_help_documents_flags() {
         stdout.contains("--device-id"),
         "play --help missing --device-id: {stdout}"
     );
-    // Flags that do not exist must not appear in help.
-    assert!(
-        !stdout.contains("--raw"),
-        "--raw must not appear in play --help: {stdout}"
-    );
 }
 
 // --device and --device-id are mutually exclusive; clap rejects supplying
@@ -161,8 +156,7 @@ fn hound_roundtrip_16bit_pcm() {
     assert_eq!(r.duration() as usize, total);
 }
 
-// 32-bit float WAVs produced by other tools (Audacity, ffmpeg) should also
-// open cleanly.
+// 32-bit float WAVs produced by other audio tools should also open cleanly.
 #[test]
 fn hound_roundtrip_32bit_float() {
     let sample_rate = 44100;

@@ -9,11 +9,11 @@ Cross-platform CLI for audio capture, playback, and device management. One binar
 
 ## Why decibri-cli?
 
-Recording and playing audio from a shell script should be easy. In practice, the existing options are rough: **SoX** is barely maintained and painful on Windows; **arecord** and **aplay** are Linux-only; **ffmpeg** works but is a 70 MB dependency for a task that should be 500 KB.
+Recording and playing audio from a shell script should be simple. decibri-cli is one small binary focused on a single job: scriptable audio I/O. Capture from a microphone, play a WAV, list devices. That is it.
 
-`decibri-cli` is a modern alternative focused on one thing: scriptable audio I/O. Capture from a microphone, play a WAV, list devices. That's it. The binary is ~850 KB, runs on Windows, Linux, and macOS from the same command line, and produces standard 16-bit PCM WAV files that every other audio tool understands. It's built on the [`decibri`](https://github.com/decibri/decibri) Rust audio library, which uses [cpal](https://github.com/RustAudio/cpal) for native audio I/O on every supported platform — no JACK, PulseAudio, or virtualenv dance required.
+The binary is about 850 KB, runs on Windows, Linux, and macOS from the same command line, and produces standard 16-bit PCM WAV files that every other audio tool understands. It is built on the [`decibri`](https://github.com/decibri/decibri) Rust audio library, which uses [cpal](https://github.com/RustAudio/cpal) for native audio I/O on every supported platform, with no runtime dependencies.
 
-Common jobs it handles cleanly: ASR pipeline inputs, CI audio diagnostics, quick voice recordings for debugging, round-trip tests for audio drivers, and anywhere else you need a one-liner that "records this, plays that, lists those."
+Common jobs it handles cleanly: ASR pipeline inputs, CI audio diagnostics, quick voice recordings for debugging, round-trip tests for audio drivers, and anywhere else you need a one-liner that records this, plays that, lists those.
 
 ## Install
 
@@ -23,7 +23,7 @@ Common jobs it handles cleanly: ASR pipeline inputs, CI audio diagnostics, quick
 npm install -g decibri-cli
 ```
 
-The npm wrapper downloads the platform binary from the matching GitHub Release, verifies its SHA256 against a signed checksum file, and places it on your PATH. No Node.js is needed at runtime.
+The npm wrapper downloads the platform binary from the matching GitHub Release, verifies its SHA256 against the release's checksum manifest, and places it on your PATH. No Node.js is needed at runtime.
 
 ### Cargo
 
@@ -57,8 +57,8 @@ decibri version
 
 All commands accept two global flags:
 
-- `--json` — emit machine-readable JSON output where supported
-- `--quiet`, `-q` — suppress non-essential human output (progress bars, status messages)
+- `--json`: emit machine-readable JSON output where supported
+- `--quiet`, `-q`: suppress non-essential human output (progress bars, status messages)
 
 ### `decibri version`
 
@@ -66,22 +66,22 @@ Show version and build information.
 
 ```
 $ decibri version
-decibri-cli 0.1.0
-decibri 3.0.0
+decibri-cli 0.2.0
+decibri 5.0.0
 Audio backend: WASAPI
 Platform: x86_64-pc-windows-msvc
-Rust: 1.82.0
+Rust: 1.88
 ```
 
 The `--json` output schema is **stable** from v0.1.0:
 
 ```json
 {
-  "decibri_cli": "0.1.0",
-  "decibri": "3.0.0",
+  "decibri_cli": "0.2.0",
+  "decibri": "5.0.0",
   "audio_backend": "WASAPI",
   "target": "x86_64-pc-windows-msvc",
-  "rust_version": "1.82.0"
+  "rust_version": "1.88"
 }
 ```
 
@@ -122,10 +122,11 @@ Record audio from an input device to a WAV file.
 | `--output <FILE>` | `-o` | required | Output WAV file path |
 | `--duration <TIME>` | `-d` | unset (record until Ctrl+C) | Recording duration (e.g., `10`, `5.5`, `10s`, `1m30s`) |
 | `--rate <HZ>` | `-r` | `16000` | Sample rate in Hz |
-| `--channels <N>` | `-c` | `1` | 1 = mono, 2 = stereo |
+| `--channels <N>` | `-c` | `1` | Mono only. Values other than 1 are rejected. |
 | `--device <NAME_OR_INDEX>` | | default input | Device name substring (case-insensitive) or numeric index from `decibri devices` |
+| `--device-id <ID>` | | unset | Exact device id from `decibri devices --json`. Mutually exclusive with `--device`. |
 
-Output is always 16-bit PCM WAV. Ctrl+C produces a valid truncated WAV, not a corrupt file. Long recordings have stable memory usage — a 60-minute capture does not grow RSS unboundedly.
+Output is always 16-bit PCM WAV. Ctrl+C produces a valid truncated WAV, not a corrupt file. Long recordings have stable memory usage: a 60-minute capture does not grow RSS unboundedly.
 
 Examples:
 
@@ -133,8 +134,8 @@ Examples:
 # Voice recording for ASR (default settings are already right)
 decibri capture -o speech.wav -d 30
 
-# Music recording: 44.1 kHz stereo
-decibri capture -o song.wav -d 60 -r 44100 -c 2
+# Higher sample rate capture
+decibri capture -o clip.wav -d 60 -r 44100
 
 # Record from a specific microphone by name substring
 decibri capture -o yeti.wav -d 10 --device "yeti"
@@ -157,6 +158,7 @@ Play a WAV file through an output device.
 |---|---|
 | `<FILE>` (positional) | WAV file to play |
 | `--device <NAME_OR_INDEX>` | Device name substring or numeric index from `decibri devices` (output side) |
+| `--device-id <ID>` | Exact device id from `decibri devices --json`. Mutually exclusive with `--device`. |
 
 Supports 16-bit PCM int and 32-bit float WAV inputs. Other formats (24-bit, 8-bit, non-PCM codecs) exit with a clear error. Ctrl+C during playback stops cleanly with exit 0; the completion metadata reports `"interrupted": true` in JSON mode.
 
@@ -190,7 +192,7 @@ decibri devices --input       # find the device name
 decibri capture -o out.wav -d 10 --device "Blue Yeti"
 ```
 
-Name matching is case-insensitive substring — `"yeti"` matches `"Blue Yeti USB Microphone"`.
+Name matching is a case-insensitive substring: `"yeti"` matches `"Blue Yeti USB Microphone"`.
 
 ### Test an audio device from a shell script
 
@@ -227,29 +229,15 @@ Scripts can rely on these. They are part of the stable CLI contract.
 | Linux | aarch64 | npm, direct download, `cargo install` |
 | macOS | Intel + Apple Silicon | npm, direct download (universal2 binary) |
 
-## Comparison with other tools
-
-| | decibri-cli | SoX | ffmpeg | arecord/aplay |
-|---|---|---|---|---|
-| Cross-platform | ✅ | ⚠️ painful on Windows | ✅ | ❌ Linux only |
-| Zero runtime deps | ✅ (one binary) | ⚠️ | ❌ (70+ MB) | ✅ |
-| Actively maintained | ✅ | ❌ | ✅ | ✅ |
-| Modern CLI syntax | ✅ | ❌ (cryptic) | ❌ (complex) | ⚠️ ALSA-specific |
-| Binary size | ~850 KB | ~4 MB | ~70 MB | N/A (system) |
-| Install via npm | ✅ | ❌ | ❌ | ❌ |
-| JSON output for scripting | ✅ | ❌ | ⚠️ (ffprobe) | ❌ |
-
-`decibri-cli` is not trying to replace ffmpeg. If you need transcoding, filtering, mixing, or any non-trivial audio processing, use ffmpeg. `decibri-cli` is for the cases where ffmpeg is too much: scripting a capture, playing a WAV, listing devices, checking that your mic works.
-
 ## How it works
 
-`decibri-cli` is a thin shell over the [`decibri`](https://github.com/decibri/decibri) Rust audio library. Device enumeration and cpal streams come from the library; the CLI adds argument parsing (clap), WAV I/O (hound), progress bars (indicatif), and the exit-code table. The release binary is compiled with `opt-level = "z"`, link-time optimization, and `panic = "abort"` — the standard Rust size-shrinking profile. Default decibri features are trimmed to `capture` and `output` only (VAD and denoise are v0.2.0 features), which keeps the binary under 1 MB.
+`decibri-cli` is a thin shell over the [`decibri`](https://github.com/decibri/decibri) Rust audio library. Device enumeration and the audio streams come from the library; the CLI adds argument parsing (clap), WAV I/O (hound), progress bars (indicatif), and the exit-code table. The release binary is compiled with `opt-level = "z"`, link-time optimization, and `panic = "abort"`, the standard Rust size-shrinking profile. Default decibri features are trimmed to `capture` and `playback` only, which keeps the binary small.
 
-Capture is synchronous and callback-based under the hood. A dedicated worker thread receives audio chunks from cpal via the library's internal channel and streams them into a `hound::WavWriter` with backpressure protection — a watchdog stops the stream cleanly if the writer falls more than ~16 seconds behind, so disk stalls don't balloon memory. Ctrl+C triggers a cooperative shutdown that drains the last chunks, finalizes the WAV header, and exits with code 0.
+Capture pulls requested-rate audio from the library a block at a time and streams it into a `hound::WavWriter`. The device opens at its native rate and the library resamples to the rate you ask for with `--rate`, so the output file always matches the requested rate. If the writer cannot keep up, the library drops the newest audio rather than growing memory without bound; the number of dropped blocks is reported as `dropped_chunks`, and a warning is printed to stderr when it is nonzero, so a long capture on a slow disk completes with an accurate record of any loss instead of failing. Ctrl+C triggers a cooperative shutdown that drains the remaining audio, finalizes the WAV header, and exits with code 0.
 
 ## Security notes
 
-**Windows SmartScreen.** v0.1.x binaries are unsigned. First run may show a SmartScreen warning; click **More info** → **Run anyway**. This is a known limitation and will be revisited for v0.2.0 based on user demand for EV certificates.
+**Windows SmartScreen.** Release binaries are unsigned. First run may show a SmartScreen warning; click **More info** → **Run anyway**. This is a known limitation.
 
 **macOS Gatekeeper.** Direct downloads on macOS may trigger "cannot be opened because the developer cannot be verified." Remove the quarantine flag:
 
@@ -257,12 +245,13 @@ Capture is synchronous and callback-based under the hood. A dedicated worker thr
 xattr -d com.apple.quarantine /path/to/decibri
 ```
 
-The `npm install -g` path bypasses this because npm writes the binary through a different code path than the browser download. Homebrew-style distribution (v0.3.0) will include proper notarization.
+The `npm install -g` path bypasses this because npm writes the binary through a different code path than the browser download.
 
-**Binary provenance.** Every release binary is built via GitHub Actions with SLSA provenance attestations. Verify any download with the GitHub CLI:
+**Binary provenance.** Every release binary is built via GitHub Actions with SLSA provenance attestations. The attestation covers the `decibri` binary itself, not the archive it ships in, so extract first, then verify with the GitHub CLI:
 
 ```
-gh attestation verify decibri-x86_64-unknown-linux-gnu.tar.gz --owner decibri
+tar xzf decibri-x86_64-unknown-linux-gnu.tar.gz
+gh attestation verify decibri --owner decibri
 ```
 
 The attestation proves the binary was built by the repo's release workflow from a specific commit, signed via Sigstore and published to the GitHub attestation store.
@@ -279,27 +268,6 @@ Get-FileHash decibri-x86_64-pc-windows-msvc.zip -Algorithm SHA256
 
 The npm wrapper does this check automatically on every install.
 
-## Roadmap
-
-### v0.1.0 (current)
-- Audio capture to WAV (`decibri capture`)
-- WAV file playback (`decibri play`)
-- Device listing (`decibri devices`)
-- Version and build metadata (`decibri version`)
-- Cross-platform distribution (npm, crates.io, direct download)
-
-### v0.2.0 (planned)
-- Voice activity detection (`decibri capture --vad`)
-- Raw PCM piping via stdin/stdout (`decibri capture --raw`, `decibri play --raw`)
-- Diagnostics subcommand (`decibri test`)
-- Shell completions generation via the existing hidden `completions` plumbing
-
-### v0.3.0+ (future)
-- Homebrew formula and Scoop manifest
-- Linux package submissions (AUR, etc.)
-- Config file support (`~/.decibri/config.toml`)
-- Format conversion (`decibri convert`)
-
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports, feature requests, and pull requests are all welcome.
@@ -311,11 +279,3 @@ See [SECURITY.md](SECURITY.md). Security issues should be reported privately via
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
-
-## Part of the decibri ecosystem
-
-- [`decibri`](https://github.com/decibri/decibri) — the underlying Rust audio library + Node.js bindings
-- [`mcp-listen`](https://github.com/decibri/mcp-listen) — MCP server for AI agent voice input
-- [`mcp-speak`](https://github.com/decibri/mcp-speak) — MCP server for AI agent voice output
-
-Learn more at [decibri.com](https://decibri.com).

@@ -6,8 +6,8 @@ Only the latest published version of decibri-cli receives security updates.
 
 | Version | Supported |
 |---------|-----------|
-| 0.1.x   | Yes       |
-| < 0.1   | No        |
+| 0.2.x   | Yes       |
+| < 0.2   | No        |
 
 ## Reporting a vulnerability
 
@@ -36,10 +36,11 @@ Include in your report:
 
 ## Binary provenance
 
-Every release binary is built via GitHub Actions and signed with a SLSA provenance attestation through Sigstore. You can verify any downloaded binary with the GitHub CLI:
+Every release binary is built via GitHub Actions and signed with a SLSA provenance attestation through Sigstore. The attestation covers the `decibri` binary itself, not the archive it ships in. Extract the archive, then verify the binary with the GitHub CLI:
 
 ```
-gh attestation verify decibri-x86_64-unknown-linux-gnu.tar.gz --owner decibri
+tar xzf decibri-x86_64-unknown-linux-gnu.tar.gz
+gh attestation verify decibri --owner decibri
 ```
 
 The attestation proves the binary was produced by this repository's release workflow from a specific commit. A failed verification means either a corrupted download, a binary from a different source, or tampering.
@@ -68,7 +69,7 @@ The `npm install -g decibri-cli` flow performs this verification automatically o
 
 ## Known limitations
 
-- **Unsigned Windows binaries.** v0.1.x release binaries are not signed with an EV code-signing certificate. On first run, Windows SmartScreen may show a warning. This is not a security vulnerability; it reflects our decision to defer code-signing costs until user demand justifies them. Users who need signed binaries can build from source with `cargo install decibri-cli`.
-- **Unsigned macOS binaries.** Same rationale — no Apple Developer signing or notarization in v0.1.x. macOS Gatekeeper warnings require `xattr -d com.apple.quarantine <path>` on direct downloads. The `npm install -g` path bypasses this.
+- **Unsigned Windows binaries.** Release binaries are not signed with an EV code-signing certificate. On first run, Windows SmartScreen may show a warning.
+- **Unsigned macOS binaries.** Release binaries have no Apple Developer signing or notarization. macOS Gatekeeper warnings require `xattr -d com.apple.quarantine <path>` on direct downloads. The `npm install -g` path bypasses this.
 
-Both limitations are roadmap items for v0.2.0 if the user base grows enough to justify the annual cost.
+Neither is a vulnerability; both are deferred cost decisions. Users who need signed binaries can build from source with `cargo install decibri-cli`.
