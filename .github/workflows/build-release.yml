@@ -1,8 +1,12 @@
 name: Build Release
 
-# Triggered by pushing a v* tag (e.g., v0.1.0, v0.1.0-alpha.1, v0.1.0-rc.1).
-# Also supports manual dispatch for pipeline testing — in that case only the
-# build matrix runs; the `release` job is gated to tag pushes.
+# Single release pipeline, triggered by pushing a v* tag (e.g., v0.2.0,
+# v0.2.0-rc.1). On a tag push: preflight asserts the tag matches both
+# manifests, the matrix builds all targets, the GitHub Release is published
+# with all binaries, then crates.io and npm publishes each wait for manual
+# approval behind their protected environments (crates, npm).
+# Manual dispatch is a build-only dry run: preflight, build, universal2,
+# and verify-pack run; no Release is created and nothing is published.
 on:
   push:
     tags:
@@ -15,12 +19,50 @@ concurrency:
 
 permissions:
   contents: write        # softprops/action-gh-release creates/updates the Release
-  id-token: write        # OIDC for actions/attest-build-provenance
+  id-token: write        # OIDC for attest-build-provenance, crates.io, and npm trusted publishing
   attestations: write    # actions/attest-build-provenance writes the attestation
 
 jobs:
+  preflight:
+    name: Preflight (version match)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run mode
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "::notice::DRY RUN MODE (workflow_dispatch). Build and verify only; no Release, no publish."
+          else
+            echo "Publishing run. Tag: ${{ github.ref_name }}"
+          fi
+
+      - name: Assert tag version matches manifests
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          # Tag form: refs/tags/v0.2.0 -> TAG_VERSION=0.2.0. Pre-release
+          # tags (v0.2.0-rc.1) are allowed; the suffix must match both
+          # manifests. jq is preinstalled on ubuntu-latest runners.
+          TAG_VERSION="${{ github.ref_name }}"
+          TAG_VERSION="${TAG_VERSION#v}"
+          CARGO_VERSION=$(grep -oP '^version\s*=\s*"\K[^"]+' Cargo.toml | head -1)
+          if [ -z "$CARGO_VERSION" ]; then
+            echo "ERROR: could not extract version from Cargo.toml"
+            exit 1
+          fi
+          PKG_VERSION=$(jq -r .version npm/decibri-cli/package.json)
+          echo "tag=${TAG_VERSION} cargo=${CARGO_VERSION} npm=${PKG_VERSION}"
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ] || [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "ERROR: version mismatch. Bump Cargo.toml and npm/decibri-cli/package.json to ${TAG_VERSION}, then re-tag."
+            exit 1
+          fi
+          echo "OK: tag, Cargo.toml, and package.json all agree on ${TAG_VERSION}"
+
   build:
     name: Build (${{ matrix.target }})
+    needs: preflight
     strategy:
       fail-fast: false
       matrix:
@@ -59,11 +101,11 @@ jobs:
 
       # Full multiarch setup for aarch64 cross-compile with ALSA.
       # Explicit because setup-cross-toolchain-action installs the cross gcc
-      # but does NOT configure arm64 package sources — so libasound2-dev:arm64
+      # but does NOT configure arm64 package sources, so libasound2-dev:arm64
       # is unavailable after it runs. Sequence:
       #  1. Enable arm64 architecture
       #  2. Restrict default amd64 mirror to amd64 only (both DEB822 and legacy
-      #     sources.list handled — Ubuntu runner images vary)
+      #     sources.list handled; Ubuntu runner images vary)
       #  3. Add a ports.ubuntu.com mirror for arm64 packages
       #  4. apt-get update, install the arm64 ALSA dev headers and the cross gcc
       #  5. Export linker + pkg-config env for cargo
@@ -165,13 +207,67 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  verify-pack:
+    name: Verify npm pack contents
+    needs: preflight
+    # Runs on both tag pushes and dispatch dry runs. publish-npm requires
+    # this job, so a bad pack list blocks the npm publish.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Verify npm package contents (pre-publish gate)
+        shell: bash
+        run: |
+          set -o pipefail
+          cd npm/decibri-cli
+          files=$(npm pack --dry-run --json | jq -r '.[0].files[].path')
+          echo "Would pack:"
+          echo "$files" | sort | sed 's/^/  * /'
+          FAIL=0
+          # Required: the manifest, both lifecycle scripts, the bin shim,
+          # README, and LICENSE. This is the package.json `files` allowlist,
+          # and everything a working install needs.
+          for f in package.json install.js uninstall.js bin/decibri README.md LICENSE; do
+            if echo "$files" | grep -Fxq "$f"; then
+              echo "  [OK]   required present: $f"
+            else
+              echo "  [FAIL] required MISSING: $f"
+              FAIL=1
+            fi
+          done
+          # Forbidden: any binary artifact. install.js downloads the binary
+          # from the GitHub Release at install time; nothing binary ships in
+          # the package. decibri-bin is the downloaded binary's basename
+          # (extensionless on Unix, so the extension patterns miss it).
+          for p in '\.node$' '\.exe$' '\.zip$' '\.tar\.gz$' 'decibri-bin'; do
+            matches=$(echo "$files" | grep -E "$p" || true)
+            if [ -n "$matches" ]; then
+              echo "  [FAIL] forbidden pattern '$p' matched:"
+              echo "$matches" | sed 's/^/         /'
+              FAIL=1
+            else
+              echo "  [OK]   forbidden absent: $p"
+            fi
+          done
+          if [ "$FAIL" -ne 0 ]; then
+            echo "VERIFICATION FAILED: not publish-ready"
+            exit 1
+          fi
+          echo "OK verify-pack: package contents are publish-ready"
+
   release:
     name: Create GitHub Release
     needs: [build, universal2]
-    # Only create a Release for actual tag pushes. On workflow_dispatch the
-    # build+universal2 jobs still run (useful for smoke-testing the pipeline)
-    # but the Release step is skipped.
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Only tag pushes create a Release; workflow_dispatch is a build-only
+    # dry run. The Release is published immediately (not draft) because the
+    # npm wrapper's install.js downloads binaries from the live Release,
+    # and the publish-npm job depends on those assets being up.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -192,7 +288,7 @@ jobs:
           cd artifacts
           # Sort deterministically by filename so the SHA256SUMS file is
           # reproducible across re-runs. Format: "<hex>  <filename>" (two
-          # spaces — GNU sha256sum convention).
+          # spaces, the GNU sha256sum convention).
           find . -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) \
             -printf '%f\n' \
             | sort \
@@ -207,7 +303,75 @@ jobs:
             artifacts/decibri-*.tar.gz
             artifacts/decibri-*.zip
             artifacts/SHA256SUMS
-          draft: true
+          draft: false
           prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
           generate_release_notes: true
           fail_on_unmatched_files: true
+
+  publish-crate:
+    name: Publish to crates.io
+    needs: preflight
+    # Tag pushes only; workflow_dispatch is a build-only dry run.
+    if: github.event_name == 'push'
+    # Required-reviewer protection on this environment gates the publish
+    # behind a manual approval in the Actions UI.
+    environment: crates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install ALSA headers
+        # `cargo publish` runs a verify build of the packaged crate. The
+        # `cpal` transitive dep links ALSA on Linux.
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Authenticate to crates.io
+        # Exchanges a GitHub OIDC token for a short-lived crates.io publish
+        # token, consumed by the next step's CARGO_REGISTRY_TOKEN env var.
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish
+
+  publish-npm:
+    name: Publish to npm
+    # The wrapper's install.js downloads binaries from the GitHub Release,
+    # so the Release (with all assets) must be live before the npm publish,
+    # and verify-pack must have passed on this same commit.
+    needs: [release, verify-pack]
+    # Tag pushes only; workflow_dispatch is a build-only dry run.
+    if: github.event_name == 'push'
+    # Required-reviewer protection on this environment gates the publish
+    # behind a manual approval in the Actions UI.
+    environment: npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@latest
+
+      - name: Publish decibri-cli
+        # npm Trusted Publishing (OIDC) supplies auth automatically given
+        # `id-token: write` and the registered trusted publisher record.
+        # No NODE_AUTH_TOKEN is used.
+        run: cd npm/decibri-cli && npm publish --access public
+
+      - name: Verify npm publish
+        shell: bash
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          echo "Verifying npm registry view for decibri-cli@${VERSION}"
+          sleep 30
+          npm view "decibri-cli@${VERSION}"
