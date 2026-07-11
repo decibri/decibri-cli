@@ -5,7 +5,7 @@ expression: parsed
 {
   "audio_backend": "[backend]",
   "decibri": "5.0.0",
-  "decibri_cli": "0.2.2",
+  "decibri_cli": "0.3.0",
   "rust_version": "[rust_version]",
   "target": "[target]"
 }

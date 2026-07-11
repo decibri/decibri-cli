@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-11
+
 ### Added
 
 - Opt-in capture conditioning flags: `--dc-removal`, `--highpass <HZ>`, `--agc <DBFS>`, and `--limiter <DBFS>`, applying decibri's pure-DSP conditioning stages for clean, leveled capture (useful for ASR input). The high-pass cutoff accepts the library's supported set: 80 or 100 Hz.
@@ -83,7 +85,8 @@ Stable release of the same feature set as `0.1.0-alpha.1`. No functional changes
 - SLSA provenance attestations on every release binary via GitHub Actions.
 - `SHA256SUMS` manifest attached to every release for integrity verification.
 
-[Unreleased]: https://github.com/decibri/decibri-cli/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/decibri/decibri-cli/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/decibri/decibri-cli/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/decibri/decibri-cli/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/decibri/decibri-cli/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/decibri/decibri-cli/compare/v0.1.0...v0.2.0
