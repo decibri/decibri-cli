@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-07-11
+
 ### Fixed
 
 - `decibri play` no longer hangs if the output device is lost mid-playback or when Ctrl+C arrives while playback backpressure is applied; it now stops promptly and, on device loss, exits 4 with a clear message.
@@ -76,7 +78,8 @@ Stable release of the same feature set as `0.1.0-alpha.1`. No functional changes
 - SLSA provenance attestations on every release binary via GitHub Actions.
 - `SHA256SUMS` manifest attached to every release for integrity verification.
 
-[Unreleased]: https://github.com/decibri/decibri-cli/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/decibri/decibri-cli/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/decibri/decibri-cli/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/decibri/decibri-cli/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/decibri/decibri-cli/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/decibri/decibri-cli/releases/tag/v0.1.0
