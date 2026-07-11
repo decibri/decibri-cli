@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in capture conditioning flags: `--dc-removal`, `--highpass <HZ>`, `--agc <DBFS>`, and `--limiter <DBFS>`, applying decibri's pure-DSP conditioning stages for clean, leveled capture (useful for ASR input). The high-pass cutoff accepts the library's supported set: 80 or 100 Hz.
+- `conditioning` object in the `capture --json` completion payload: always present, one key per active conditioning stage, `{}` when none are active.
+
 ## [0.2.2] - 2026-07-11
 
 ### Fixed

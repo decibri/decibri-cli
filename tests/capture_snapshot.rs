@@ -41,6 +41,10 @@ fn capture_help_documents_all_flags() {
         "--channels",
         "--device",
         "--device-id",
+        "--dc-removal",
+        "--highpass",
+        "--agc",
+        "--limiter",
     ] {
         assert!(
             stdout.contains(flag),
@@ -114,6 +118,103 @@ fn capture_rejects_device_and_device_id_together() {
     assert!(!output.status.success(), "conflicting flags must error");
     let code = output.status.code().unwrap_or(-1);
     assert_eq!(code, 2, "expected exit 2 (invalid arguments), got {code}");
+}
+
+// The high-pass cutoff is a closed set (80, 100), matching the library's
+// named-cutoff selector. Anything else is rejected at the clap layer with
+// exit code 2 and a message naming the supported cutoffs.
+#[test]
+fn capture_rejects_unsupported_highpass_cutoff() {
+    let output = Command::new(binary_path())
+        .args(["capture", "-o", "x.wav", "--highpass", "60"])
+        .output()
+        .expect("failed to execute decibri binary");
+    assert!(!output.status.success(), "--highpass 60 must error");
+    let code = output.status.code().unwrap_or(-1);
+    assert_eq!(code, 2, "expected exit 2 (invalid arguments), got {code}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("80, 100"),
+        "expected supported-cutoff arg error, got: {stderr}"
+    );
+}
+
+// The AGC target must fall in [-40, -3] dBFS; an out-of-range value is
+// rejected at the clap layer with exit code 2.
+#[test]
+fn capture_rejects_out_of_range_agc() {
+    for bad in ["40", "-41", "0"] {
+        let output = Command::new(binary_path())
+            .args(["capture", "-o", "x.wav", "--agc", bad])
+            .output()
+            .expect("failed to execute decibri binary");
+        assert!(!output.status.success(), "--agc {bad} must error");
+        let code = output.status.code().unwrap_or(-1);
+        assert_eq!(
+            code, 2,
+            "expected exit 2 (invalid arguments) for --agc {bad}, got {code}"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("[-40, -3]"),
+            "expected agc range arg error for --agc {bad}, got: {stderr}"
+        );
+    }
+}
+
+// The limiter ceiling must fall in [-3.0, 0.0] dBFS; an out-of-range value
+// is rejected at the clap layer with exit code 2.
+#[test]
+fn capture_rejects_out_of_range_limiter() {
+    for bad in ["1", "-3.1", "0.5"] {
+        let output = Command::new(binary_path())
+            .args(["capture", "-o", "x.wav", "--limiter", bad])
+            .output()
+            .expect("failed to execute decibri binary");
+        assert!(!output.status.success(), "--limiter {bad} must error");
+        let code = output.status.code().unwrap_or(-1);
+        assert_eq!(
+            code, 2,
+            "expected exit 2 (invalid arguments) for --limiter {bad}, got {code}"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("[-3.0, 0.0]"),
+            "expected limiter range arg error for --limiter {bad}, got: {stderr}"
+        );
+    }
+}
+
+// Negative conditioning values (`--agc -20`, `--limiter -1`) must parse as
+// option values, not be mistaken for flags. Combined with a nonexistent
+// device ID the run gets past clap (which would exit 2) and fails at device
+// resolution: 3 where enumeration works, 4 where the audio subsystem is
+// unavailable (headless CI). Same pattern as the --device-id test above.
+#[test]
+fn capture_accepts_negative_conditioning_values() {
+    let output = Command::new(binary_path())
+        .args([
+            "capture",
+            "-o",
+            "x.wav",
+            "--dc-removal",
+            "--highpass",
+            "80",
+            "--agc",
+            "-20",
+            "--limiter",
+            "-1",
+            "--device-id",
+            "no-such-device-id-zzz",
+        ])
+        .output()
+        .expect("failed to execute decibri binary");
+    assert!(!output.status.success(), "nonexistent device ID must error");
+    let code = output.status.code().unwrap_or(-1);
+    assert!(
+        code == 3 || code == 4,
+        "expected 3 (device not found) or 4 (audio subsystem unavailable), got {code}"
+    );
 }
 
 #[test]
