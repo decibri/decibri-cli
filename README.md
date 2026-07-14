@@ -1,3 +1,14 @@
+
+<p align="center">
+  <a href="https://decibri.com">
+    <img
+      src="https://github.com/user-attachments/assets/a60a34cf-f041-479b-a7f3-019a58fe8a56"
+      alt="Decibri mcp-listen"
+      width="100%">
+  </a>
+</p>
+
+
 # decibri-cli
 
 [![npm](https://img.shields.io/npm/v/decibri-cli.svg)](https://www.npmjs.com/package/decibri-cli)
