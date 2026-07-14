@@ -2,12 +2,11 @@
 <p align="center">
   <a href="https://decibri.com">
     <img
-      src="https://github.com/user-attachments/assets/a60a34cf-f041-479b-a7f3-019a58fe8a56"
+      src="https://github.com/user-attachments/assets/bc2c37ed-5105-4007-9efb-c07c6b4a25ac"
       alt="Decibri mcp-listen"
       width="100%">
   </a>
 </p>
-
 
 # decibri-cli
 
