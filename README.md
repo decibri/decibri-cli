@@ -3,7 +3,7 @@
   <a href="https://decibri.com">
     <img
       src="https://github.com/user-attachments/assets/a60a34cf-f041-479b-a7f3-019a58fe8a56"
-      alt="Decibri mcp-listen"
+      alt="Decibri CLI"
       width="100%">
   </a>
 </p>
