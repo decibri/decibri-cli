@@ -321,9 +321,9 @@ checksum = "0c87e182de0887fd5361989c677c4e8f5000cd9491d6d563161a8f3a5519fc7f"
 
 [[package]]
 name = "decibri"
-version = "5.0.0"
+version = "5.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9090b5074e27aa0cabb3d4501a760bfe1b1a34c1177d9ada1f3166468161a9a1"
+checksum = "072d49549dc8ae346270f83dd15ed8d8c451917bac1765f70f1c391036216dcd"
 dependencies = [
  "cpal",
  "crossbeam-channel",
