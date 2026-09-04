@@ -1,0 +1,21 @@
+---
+source: tests/process_snapshot.rs
+expression: parsed
+---
+{
+  "channels": 1,
+  "clipped_samples": 0,
+  "conditioning": {
+    "agc": -20,
+    "dc_removal": true,
+    "highpass": 80
+  },
+  "duration_seconds": 1.01325,
+  "input": "[input]",
+  "input_format": "WAV",
+  "non_finite_samples": 0,
+  "output": "[output]",
+  "output_format": "WAV",
+  "sample_rate": 16000,
+  "samples": 16212
+}

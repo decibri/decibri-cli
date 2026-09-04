@@ -19,11 +19,11 @@ Cross-platform CLI for audio capture, playback, and device management. One binar
 
 ## Why decibri-cli?
 
-Recording and playing audio from a shell script should be simple. decibri-cli is one small binary focused on a single job: scriptable audio I/O. Capture from a microphone, play a WAV, list devices. That is it.
+Recording and playing audio from a shell script should be simple. decibri-cli is one small binary focused on a single job: scriptable audio I/O. Capture from a microphone, play a WAV, condition and resample a file, list devices. That is it.
 
 The binary is about 850 KB, runs on Windows, Linux, and macOS from the same command line, and produces standard 16-bit PCM WAV files that every other audio tool understands. It is built on the [`decibri`](https://github.com/decibri/decibri) Rust audio library, which uses [cpal](https://github.com/RustAudio/cpal) for native audio I/O on every supported platform, with no runtime dependencies.
 
-Common jobs it handles cleanly: ASR pipeline inputs, CI audio diagnostics, quick voice recordings for debugging, round-trip tests for audio drivers, and anywhere else you need a one-liner that records this, plays that, lists those.
+Common jobs it handles cleanly: ASR pipeline inputs, CI audio diagnostics, quick voice recordings for debugging, round-trip tests for audio drivers, batch preparation of existing recordings, and anywhere else you need a one-liner that records this, plays that, lists those.
 
 ## Install
 
@@ -55,6 +55,9 @@ decibri capture -o recording.wav -d 10
 
 # Play it back
 decibri play recording.wav
+
+# Condition and resample a file for ASR
+decibri process -i recording.wav -o clean.wav -r 16000 --highpass 80 --agc -20
 
 # List audio devices
 decibri devices
@@ -131,7 +134,7 @@ Record audio from an input device to a WAV file.
 |---|---|---|---|
 | `--output <FILE>` | `-o` | required | Output WAV file path |
 | `--duration <TIME>` | `-d` | unset (record until Ctrl+C) | Recording duration (e.g., `10`, `5.5`, `10s`, `1m30s`) |
-| `--rate <HZ>` | `-r` | `16000` | Sample rate in Hz |
+| `--rate <HZ>` | `-r` | `16000` | Sample rate in Hz. Range: 1000 to 384000. Out-of-range values are rejected as an argument error (exit 2). |
 | `--channels <N>` | `-c` | `1` | Mono only. Values other than 1 are rejected. |
 | `--device <NAME_OR_INDEX>` | | default input | Device name substring (case-insensitive) or numeric index from `decibri devices` |
 | `--device-id <ID>` | | unset | Exact device id from `decibri devices --json`. Mutually exclusive with `--device`. |
@@ -192,6 +195,55 @@ decibri play song.wav --device "Speakers"
 decibri play clip.wav --json
 ```
 
+### `decibri process`
+
+Condition and resample an audio file, writing a new mono file. The file-based
+companion to `capture`: the same conditioning stages, applied to audio you
+already have.
+
+| Flag | Short | Default | Description |
+|---|---|---|---|
+| `--input <PATH>` | `-i` | required | Input audio file. The format is detected from the file's content, not its name. |
+| `--output <PATH>` | `-o` | required | Output audio file. The extension selects the container. |
+| `--rate <HZ>` | `-r` | source rate | Resample to this rate in Hz. Range: 1000 to 384000. Omit to keep the source rate. |
+| `--dc-removal` | | off | Remove a constant DC offset from the signal |
+| `--highpass <HZ>` | | off | Apply a high-pass filter at the given cutoff in Hz (removes low-frequency rumble). Supported cutoffs: 80, 100. |
+| `--agc <DBFS>` | | off | Automatic gain control to the given target level in dBFS. Range: -40 to -3 (for example -20). |
+| `--limiter <DBFS>` | | off | Peak limiter ceiling in dBFS. Range: -3.0 to 0.0 (for example -1). |
+
+**Input formats.** WAV, AIFF, AIFF-C, and FLAC, identified by content rather
+than by extension. Within those containers: 8-, 16-, 24-, and 32-bit integer
+PCM, 32- and 64-bit float, and mu-law and A-law.
+
+**Output formats.** WAV (`.wav`), AIFF (`.aiff`, `.aif`, `.aifc`), and FLAC
+(`.flac`), always 16-bit. An extension naming none of these is rejected as an
+argument error before the input is read.
+
+**Output is always mono.** A multichannel input is downmixed, matching
+`capture`. Processing is not in place: `--input` and `--output` are separate
+files.
+
+`--json` reports the input and output paths and formats, the resolved rate,
+channel count, sample count and duration, the count of samples clipped at
+full scale and of non-finite samples repaired, and a `conditioning` object
+carrying one key per active stage (`{}` when none are active).
+
+Examples:
+
+```
+# Prepare a recording for ASR: 16 kHz mono, rumble removed, leveled
+decibri process -i recording.wav -o clean.wav -r 16000 --highpass 80 --agc -20
+
+# Convert and downmix without resampling (the source rate is kept)
+decibri process -i interview.flac -o interview.wav
+
+# Compress a finished recording losslessly
+decibri process -i speech.wav -o speech.flac
+
+# JSON metadata on completion, for scripting
+decibri process -i in.wav -o out.wav -r 16000 --json
+```
+
 ## Recipes
 
 ### Record 30 seconds of speech for ASR
@@ -225,6 +277,16 @@ decibri capture -o /tmp/ci-test.wav -d 2 --quiet --json
 decibri capture -o test.wav -d 5 && decibri play test.wav
 ```
 
+### Prepare an existing recording for ASR
+
+```
+decibri process -i interview.flac -o interview-16k.wav -r 16000 --highpass 80 --agc -20
+```
+
+Takes audio recorded anywhere, in any format decibri reads, and produces the
+standard ASR input shape: 16 kHz, mono, 16-bit PCM, rumble filtered and
+leveled. The same conditioning `capture` applies live.
+
 ## Exit codes
 
 Scripts can rely on these. They are part of the stable CLI contract.
@@ -237,6 +299,11 @@ Scripts can rely on these. They are part of the stable CLI contract.
 | 3 | Device not found (`--device` given but no match) |
 | 4 | IO error (file not found, disk full, permission denied, audio device lost mid-capture or mid-playback) |
 
+`process` touches no audio device, so it never exits 3. Its failures are 2
+(an out-of-range flag value, or an output extension naming no writable
+format), 4 (the input cannot be read, or the output cannot be written), and 1
+(the input is not a format decibri reads, or is corrupt).
+
 ## Supported platforms
 
 | Platform | Architecture | Distribution |
@@ -248,9 +315,11 @@ Scripts can rely on these. They are part of the stable CLI contract.
 
 ## How it works
 
-`decibri-cli` is a thin shell over the [`decibri`](https://github.com/decibri/decibri) Rust audio library. Device enumeration and the audio streams come from the library; the CLI adds argument parsing (clap), WAV I/O (hound), progress bars (indicatif), and the exit-code table. The release binary is compiled with `opt-level = "z"`, link-time optimization, and `panic = "abort"`, the standard Rust size-shrinking profile. Default decibri features are trimmed to `capture`, `playback`, and `gain` only, which keeps the binary small (`gain` is pure DSP and pulls no dependencies).
+`decibri-cli` is a thin shell over the [`decibri`](https://github.com/decibri/decibri) Rust audio library. Device enumeration, the audio streams, the conditioning chain, and the resampler all come from the library; the CLI adds argument parsing (clap), WAV I/O for the capture and playback paths (hound), file decoding for the `process` path ([`decibri-decode`](https://github.com/decibri/decibri-decode), which decibri already depends on), progress bars (indicatif), and the exit-code table. The release binary is compiled with `opt-level = "z"`, link-time optimization, and `panic = "abort"`, the standard Rust size-shrinking profile. Default decibri features are trimmed to `capture`, `playback`, and `gain` only, which keeps the binary small (`gain` is pure DSP and pulls no dependencies).
 
 Capture pulls requested-rate audio from the library a block at a time and streams it into a `hound::WavWriter`. The device opens at its native rate and the library resamples to the rate you ask for with `--rate`, so the output file always matches the requested rate. If the writer cannot keep up, the library drops the newest audio rather than growing memory without bound; the number of dropped blocks is reported as `dropped_chunks`, and a warning is printed to stderr when it is nonzero, so a long capture on a slow disk completes with an accurate record of any loss instead of failing. Ctrl+C triggers a cooperative shutdown that drains the remaining audio, finalizes the WAV header, and exits with code 0.
+
+`process` reads the input file whole, identifies its container from the leading bytes, and decodes it to `f32` samples that carry their own rate and channel count. Those samples go to the library's `File` source with the resolved target rate, so the same conditioning stages, downmix, and resampler that run on the live capture path run here, over a file. The library writes the output container; the CLI then reads that file back and decodes it, so the sample count and duration reported are the ones on disk rather than a prediction from the resampling ratio.
 
 ## Security notes
 

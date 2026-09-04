@@ -9,10 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `process` subcommand: read an audio file, run the conditioning chain and an optional resample over it, and write a new mono file. Reads WAV, AIFF, AIFF-C, and FLAC (8-, 16-, 24-, and 32-bit integer PCM, 32- and 64-bit float, mu-law, and A-law), identified by content rather than by extension. Writes 16-bit WAV, AIFF, or FLAC, selected by the output extension. Takes `--input`, `--output`, `--rate`, and the same conditioning flags as `capture` (`--dc-removal`, `--highpass`, `--agc`, `--limiter`); omitting `--rate` keeps the source rate. The `--json` completion payload reports the input and output paths and formats, the resolved rate, channel count, sample count and duration, the counts of clipped and non-finite samples, and a `conditioning` object.
+
 ### Changed
 
 - Updated the decibri dependency to 6.3.0. On a multichannel input device, mono capture is now the average of every device channel rather than the operating system's own channel collapse. A device that already delivers one channel is unaffected.
 - The `devices` table truncation indicator is now `…` where it was `...` (comfy-table 8.0), visible only when a device name is truncated in a narrow terminal.
+- `capture --rate` now validates its range at parse time and exits 2 on a value outside 1000 to 384000 Hz. Previously an out-of-range rate reached the library and exited 1, inconsistent with the other range-checked flags.
 
 ## [0.3.0] - 2026-07-11
 
