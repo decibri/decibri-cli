@@ -4,6 +4,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
 
 mod commands;
+mod conditioning;
 mod device_resolve;
 mod exit;
 
@@ -36,6 +37,8 @@ enum Commands {
     Capture(commands::capture::CaptureArgs),
     /// Play a WAV file through an output device.
     Play(commands::play::PlayArgs),
+    /// Condition and resample an audio file to a new mono file.
+    Process(commands::process::ProcessArgs),
     /// Generate shell completion scripts (plumbing only in v0.1.0).
     #[command(hide = true)]
     Completions {
@@ -61,6 +64,7 @@ fn run() -> anyhow::Result<()> {
         Some(Commands::Devices(args)) => commands::devices::run(args, cli.json, cli.quiet),
         Some(Commands::Capture(args)) => commands::capture::run(args, cli.json, cli.quiet),
         Some(Commands::Play(args)) => commands::play::run(args, cli.json, cli.quiet),
+        Some(Commands::Process(args)) => commands::process::run(args, cli.json, cli.quiet),
         Some(Commands::Completions { shell }) => {
             let mut cmd = Cli::command();
             let bin_name = cmd.get_name().to_string();

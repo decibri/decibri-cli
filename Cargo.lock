@@ -343,6 +343,7 @@ dependencies = [
  "console",
  "ctrlc",
  "decibri",
+ "decibri-decode",
  "hound",
  "humantime",
  "indicatif",
