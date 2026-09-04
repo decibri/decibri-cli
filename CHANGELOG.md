@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Updated the decibri dependency to 6.3.0. On a multichannel input device, mono capture is now the average of every device channel rather than the operating system's own channel collapse. A device that already delivers one channel is unaffected.
+- The `devices` table truncation indicator is now `…` where it was `...` (comfy-table 8.0), visible only when a device name is truncated in a narrow terminal.
+
 ## [0.3.0] - 2026-07-11
 
 ### Added
