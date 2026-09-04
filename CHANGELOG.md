@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-04
+
 ### Added
 
 - `process` subcommand: read an audio file, run the conditioning chain and an optional resample over it, and write a new mono file. Reads WAV, AIFF, AIFF-C, and FLAC (8-, 16-, 24-, and 32-bit integer PCM, 32- and 64-bit float, mu-law, and A-law), identified by content rather than by extension. Writes 16-bit WAV, AIFF, or FLAC, selected by the output extension. Takes `--input`, `--output`, `--rate`, and the same conditioning flags as `capture` (`--dc-removal`, `--highpass`, `--agc`, `--limiter`); omitting `--rate` keeps the source rate. The `--json` completion payload reports the input and output paths and formats, the resolved rate, channel count, sample count and duration, the counts of clipped and non-finite samples, and a `conditioning` object.
@@ -95,7 +97,8 @@ Stable release of the same feature set as `0.1.0-alpha.1`. No functional changes
 - SLSA provenance attestations on every release binary via GitHub Actions.
 - `SHA256SUMS` manifest attached to every release for integrity verification.
 
-[Unreleased]: https://github.com/decibri/decibri-cli/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/decibri/decibri-cli/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/decibri/decibri-cli/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/decibri/decibri-cli/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/decibri/decibri-cli/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/decibri/decibri-cli/compare/v0.2.0...v0.2.1
